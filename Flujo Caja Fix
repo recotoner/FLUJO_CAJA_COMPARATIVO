@@ -1,0 +1,52 @@
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+
+@st.cache_data
+def cargar_y_clasificar_cartola():
+    try:
+        cartola = pd.read_csv("cartola_clasificada.csv")
+    except FileNotFoundError:
+        st.error("Archivo 'cartola_clasificada.csv' no encontrado. Asegúrate de colocarlo en el mismo directorio que este script.")
+        st.stop()
+
+    try:
+        clasificador = pd.read_excel("clasificador_oficial.xlsx")
+        clasificador["Comentario"] = clasificador["Comentario"].str.upper()
+    except FileNotFoundError:
+        st.error("Archivo 'clasificador_oficial.xlsx' no encontrado. Asegúrate de colocarlo en el mismo directorio que este script.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Error al leer el archivo clasificador: {e}")
+        st.stop()
+
+    if "Comentario" not in cartola.columns:
+        st.error("La cartola no contiene la columna 'Comentario'. Revisa el archivo 'cartola_clasificada.csv'.")
+        st.stop()
+
+    if "Clasificacion" not in clasificador.columns:
+        st.error("El archivo clasificador no contiene la columna 'Clasificacion'.")
+        st.stop()
+
+    cartola["Comentario"] = cartola["Comentario"].str.upper()
+
+    cartola = cartola.merge(clasificador, on="Comentario", how="left")
+    cartola["Clasificacion"] = cartola["Clasificacion"].fillna("NO CLASIFICADO")
+    return cartola
+
+# --- UI STREAMLIT ---
+st.title("Dashboard Flujo de Caja - Junio 2025")
+
+cartola_df = cargar_y_clasificar_cartola()
+
+# Validar existencia de columna Monto
+if "Monto" not in cartola_df.columns:
+    st.error("La cartola no contiene la columna 'Monto'.")
+    st.stop()
+
+clasificacion_agrupada = cartola_df.groupby("Clasificacion")["Monto"].sum().reset_index()
+fig = px.bar(clasificacion_agrupada, x="Clasificacion", y="Monto", title="Flujo de Caja por Clasificación")
+st.plotly_chart(fig)
+
+st.subheader("Detalle completo")
+st.dataframe(cartola_df)

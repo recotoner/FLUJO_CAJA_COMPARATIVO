@@ -21,10 +21,14 @@ def clasificar_mejorado(texto, abono):
     texto = normalizar(texto)
 
     if abono > 0:
-        if any(palabra in texto for palabra in ["FACTURA", "COBRAR", "FLUJO", "TRASPASO DE", "APP-TRASPASO", "PAGO", "DEPOSITO", "DEP.CHEQ", "DEPOSITO EN EFECTIVO"]):
+        if any(palabra in texto for palabra in ["FACTURA", "COBRAR", "FLUJO", "APP-TRASPASO", "PAGO", "DEPOSITO", "DEP.CHEQ", "DEPOSITO EN EFECTIVO"]):
             return "1.01.05.01 - Facturas por cobrar Nacional- FLUJO"
         elif "LINEA DE CREDITO" in texto:
             return "LINEA DE CREDITO"
+        elif "RECICLAJES ECOLOGICOS DE CHILE LIMITADA" in texto:
+            return "FINANCIAMIENTO EXTERNO"
+        elif "TRASPASO DE" in texto:
+            return "1.01.05.01 - Facturas por cobrar Nacional- FLUJO"
         else:
             return "NO CLASIFICADO"
     else:
@@ -60,6 +64,8 @@ def clasificar_mejorado(texto, abono):
             return "2.01.07.01-Proveedores Arrdo  Oficina , estacionamiento"
         elif "PAGO INSTITUCIONES PREVISIONALES" in texto:
             return "IMPOSICIONES"
+        elif "TRASPASO DE:RECICLAJES ECOLOGICOS DE CHILE LIMITADA" in texto:
+            return "FINANCIAMIENTO EXTERNO"
         else:
             return "NO CLASIFICADO"
 

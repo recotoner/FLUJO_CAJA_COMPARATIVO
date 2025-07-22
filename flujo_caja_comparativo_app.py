@@ -64,6 +64,8 @@ def clasificar(texto, abono):
             return "2.01.07.01-PROVEEDORES ARRDO  OFICINA , ESTACIONAMIENTO ,KAME"
         elif "PAGO INSTITUCIONES PREVISIONALES" in texto:
             return "IMPOSICIONES"
+        elif "Traspaso De: Reciclajes Ecologicos De Chile Limitada" in texto:
+            return "FINANCIAMIENTO EXTERNO"
         else:
             return "NO CLASIFICADO"
 

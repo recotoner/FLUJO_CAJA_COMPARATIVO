@@ -19,9 +19,10 @@ def normalizar(texto):
 
 def clasificar(texto, abono):
     texto = normalizar(texto)
-
     if abono > 0:
-        if any(p in texto for p in ["FACTURA", "COBRAR", "FLUJO", "TRASPASO DE", "APP-TRASPASO", "PAGO", "DEPOSITO", "DEP.CHEQ", "DEPOSITO EN EFECTIVO"]):
+        if "TRASPASO DE: RECICLAJES ECOLOGICOS DE CHILE LIMITADA" in texto:
+            return "FINANCIAMIENTO EXTERNO"
+        elif any(p in texto for p in ["FACTURA", "COBRAR", "FLUJO", "APP-TRASPASO", "PAGO", "TRASPASO DE", "DEPOSITO", "DEP.CHEQ", "DEPOSITO EN EFECTIVO"]):
             return "1.01.05.01-FACTURAS POR COBRAR NACIONAL- FLUJO"
         elif "LINEA DE CREDITO" in texto:
             return "LINEA DE CREDITO"
@@ -61,11 +62,9 @@ def clasificar(texto, abono):
         elif "PAGO AUTOMATICO TARJETA DE CREDITO" in texto:
             return "PAGO TARJETA DE CREDITO"
         elif any(p in texto for p in ["INVERSIONES ISLA KENT SPA", "INMOBILIARIA MONJITAS SA", "MALSCH Y COMPANIA S.A."]):
-            return "2.01.07.01-PROVEEDORES ARRDO  OFICINA , ESTACIONAMIENTO ,KAME"
+            return "2.01.07.01-PROVEEDORES ARRIENDO OFICINA"
         elif "PAGO INSTITUCIONES PREVISIONALES" in texto:
             return "IMPOSICIONES"
-        elif "Traspaso De: Reciclajes Ecologicos De Chile Limitada" in texto:
-            return "FINANCIAMIENTO EXTERNO"
         else:
             return "NO CLASIFICADO"
 
@@ -73,21 +72,12 @@ def clasificar(texto, abono):
 def cargar_real(path):
     df = pd.read_excel(path)
     df.columns = df.columns.str.strip().str.upper()
-
     if "DESCRIPCIÓN" in df.columns:
         df.rename(columns={"DESCRIPCIÓN": "DESCRIPCION"}, inplace=True)
-
     df["DESCRIPCION"] = df["DESCRIPCION"].astype(str)
     df["FECHA"] = pd.to_datetime(df["FECHA"], dayfirst=True, errors='coerce')
     df["CLASIFICACION"] = df.apply(lambda row: clasificar(row["DESCRIPCION"], row["ABONOS (CLP)"]), axis=1)
     df["MES"] = df["FECHA"].dt.to_period("M").dt.to_timestamp()
-
-    st.write("Meses detectados en flujo real:")
-    st.write(df["MES"].dropna().unique())
-
-    st.write("Cantidad de movimientos por MES en flujo real:")
-    st.write(df["MES"].value_counts().sort_index())
-
     return df
 
 @st.cache_data
@@ -104,9 +94,24 @@ def cargar_proyeccion(path):
 df_real = cargar_real("cartola_junio_2025.xlsx")
 df_proj = cargar_proyeccion("flujo_proyectado.xlsx")
 
+# ----------------- TOTALES REALES SEGÚN RANGO -----------------
+st.subheader("📌 Totales Reales según rango seleccionado")
+
+rango = st.date_input("Selecciona rango de fechas", [df_real["FECHA"].min(), df_real["FECHA"].max()])
+fecha_inicio, fecha_fin = pd.to_datetime(rango[0]), pd.to_datetime(rango[1])
+
+df_rango = df_real[(df_real["FECHA"] >= fecha_inicio) & (df_real["FECHA"] <= fecha_fin)]
+
+total_abonos = df_rango["ABONOS (CLP)"].sum()
+total_cargos = df_rango["CARGOS (CLP)"].sum()
+flujo_neto = total_abonos - total_cargos
+
+col1, col2, col3 = st.columns(3)
+col1.metric("💰 Total Abonos", f"${total_abonos:,.0f}")
+col2.metric("💸 Total Cargos", f"${total_cargos:,.0f}")
+col3.metric("📈 Flujo Neto", f"${flujo_neto:,.0f}")
 # ----------------- VALIDACIÓN DE CLASIFICACIÓN -----------------
 st.subheader("🧪 Validación de Clasificación en Flujo Real")
-
 fecha_limite = st.date_input("Fecha límite para validar", value=df_real["FECHA"].max())
 df_validacion = df_real[df_real["FECHA"] <= pd.to_datetime(fecha_limite)]
 
@@ -125,8 +130,6 @@ st.markdown(f"""
 if n_no > 0:
     st.warning("Movimientos no clasificados detectados:")
     st.dataframe(no_clasificados[["FECHA", "DESCRIPCION", "ABONOS (CLP)", "CARGOS (CLP)"]], use_container_width=True)
-
-
 
 # ----------------- RESUMEN REAL -----------------
 df_resumen_real = df_real.groupby(["CLASIFICACION", "MES"])[["CARGOS (CLP)", "ABONOS (CLP)"]].sum().reset_index()
@@ -151,14 +154,29 @@ df_vista = df_merge[
     (df_merge["MES"] <= pd.to_datetime(fecha_fin))
 ]
 
+# Agrupar por mes y mostrar totales de abonos y cargos
+st.subheader("📌 Validación de totales mensuales (Cargos y Abonos)")
+
+# Agrupar y resumir
+totales_mensuales = df_real.groupby(df_real["FECHA"].dt.to_period("M"))[["CARGOS (CLP)", "ABONOS (CLP)"]].sum().reset_index()
+totales_mensuales["MES"] = totales_mensuales["FECHA"].dt.to_timestamp()
+st.dataframe(totales_mensuales[["MES", "CARGOS (CLP)", "ABONOS (CLP)"]].style.format({"CARGOS (CLP)": "${:,.0f}", "ABONOS (CLP)": "${:,.0f}"}))
 # ----------------- TABLA -----------------
 st.subheader("🔍 Comparación Detallada")
 st.dataframe(df_vista[["CLASIFICACION", "MES", "MONTO", "REAL_NETO", "DIFERENCIA"]], use_container_width=True)
 
 # ----------------- GRÁFICO -----------------
 st.subheader("📊 Comparativo Proyectado vs Real")
-fig = px.bar(df_vista, x="MES", y=["MONTO", "REAL_NETO"], color_discrete_sequence=["#1f77b4", "#ff7f0e"],
-             barmode="group", facet_col="CLASIFICACION", facet_col_wrap=2, height=600)
+fig = px.bar(
+    df_vista, 
+    x="MES", 
+    y=["MONTO", "REAL_NETO"], 
+    color_discrete_sequence=["#1f77b4", "#ff7f0e"],
+    barmode="group", 
+    facet_col="CLASIFICACION", 
+    facet_col_wrap=2, 
+    height=600
+)
 fig.update_layout(showlegend=True)
 st.plotly_chart(fig, use_container_width=True)
 
@@ -191,8 +209,8 @@ st.dataframe(df_resumen_mes, use_container_width=True)
 
 # ----------------- SEMÁFORO AJUSTADO -----------------
 st.subheader("📆 Evaluación Ajustada por Avance del Mes")
-
 fecha_max = df_real["FECHA"].max()
+
 def calcular_proporcion(mes):
     if pd.isnull(mes) or mes > fecha_max:
         return 0
@@ -234,6 +252,8 @@ st.subheader("⬇️ Descargar Comparativo")
 output = io.BytesIO()
 df_vista.to_excel(output, index=False, engine='openpyxl')
 st.download_button("Descargar Excel comparativo", output.getvalue(), file_name="comparativo_flujo.xlsx")
+
+# ----------------- LINK FINAL -----------------
 st.markdown("---")
 st.subheader("🔁 Otras herramientas disponibles")
 if st.button("🔗 Ir a versión con más detalle financiero"):

@@ -1,0 +1,132 @@
+{
+  "clasificadores": {
+    "abonos": [
+      {
+        "nombre": "1.01.05.01 - Facturas por cobrar Nacional- FLUJO",
+        "palabras_clave": ["FACTURA", "COBRAR", "FLUJO", "APP-TRASPASO", "PAGO", "DEPOSITO", "DEP.CHEQ", "DEPOSITO EN EFECTIVO"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "PRESTAMO RECIBIDO DE SOCIO",
+        "palabras_clave": ["TRASPASO DE: JORGE ALBERTO VICUNA GREENE"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "LINEA DE CREDITO",
+        "palabras_clave": ["LINEA DE CREDITO"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "FINANCIAMIENTO EXTERNO",
+        "palabras_clave": ["RECICLAJES ECOLOGICOS DE CHILE LIMITADA"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "1.01.05.01 - Facturas por cobrar Nacional- FLUJO",
+        "palabras_clave": ["TRASPASO DE"],
+        "tipo": "contiene_cualquiera",
+        "excluir": ["TRASPASO DE: JORGE ALBERTO VICUNA GREENE", "TRASPASO DE:RECICLAJES ECOLOGICOS DE CHILE LIMITADA"]
+      }
+    ],
+    "cargos": [
+      {
+        "nombre": "PROVEEDORES NACIONALES",
+        "palabras_clave": ["PROVEEDORES"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "PAGO DE FINIQUITO",
+        "palabras_clave": ["CHEQUE DEPOSITADO MISMO BANCO"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "PAGO DE FINIQUITOS",
+        "palabras_clave": ["CHEQUE PAGADO POR CAJA"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "REMUNERACIONES POR PAGAR",
+        "palabras_clave": ["SUELDOS", "REMUNERACION"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "PROVEEDORES NACIONALES",
+        "palabras_clave": ["SERVIPAG", "AGUA", "DISTRIBUIDORA", "TRASPASO A"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "HONORARIOS POR PAGAR",
+        "palabras_clave": ["HONORARIOS"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "GASTOS EDUCACION",
+        "palabras_clave": ["INSTITUTO", "COLEGIO"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "FACTURAS POR COBRAR NACIONAL",
+        "palabras_clave": ["CONSTRUCCION", "SEPCO"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "LINEA DE CREDITO",
+        "palabras_clave": ["LINEA"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "DEPOSITO EFECTIVO",
+        "palabras_clave": ["EFECTIVO"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "SERVICIOS TRANSBANK",
+        "palabras_clave": ["VIRTUALPOS"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "SERVICIOS EXTERNOS",
+        "palabras_clave": ["BRUSSELS"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "GASTOS Y COMISIONES BANCARIAS ( BANCO CHILE - SECURITY )",
+        "palabras_clave": ["COMISION", "SEGURO", "CARGO SEGUN INSTRUC."],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "IMPUESTOS",
+        "palabras_clave": ["PAGO EN SII"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "CREDITO BANCO DE CHILE",
+        "palabras_clave": ["PAGO DE CREDITOS M/N"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "PAGO TARJETA DE CREDITO",
+        "palabras_clave": ["PAGO AUTOMATICO TARJETA DE CREDITO", "CARGO POR PAGO TC"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "2.01.07.01-Proveedores Arrdo  Oficina , estacionamiento",
+        "palabras_clave": ["INVERSIONES ISLA KENT SPA", "INMOBILIARIA MONJITAS SA", "MALSCH Y COMPANIA S.A."],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "IMPOSICIONES",
+        "palabras_clave": ["PAGO INSTITUCIONES PREVISIONALES"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "FINANCIAMIENTO EXTERNO",
+        "palabras_clave": ["TRASPASO DE:RECICLAJES ECOLOGICOS DE CHILE LIMITADA"],
+        "tipo": "contiene_exacto"
+      }
+    ]
+  },
+  "clasificacion_default": "NO CLASIFICADO"
+}
+
+

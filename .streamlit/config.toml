@@ -1,0 +1,17 @@
+[server]
+# headless = true  # Solo para producción, comentado para desarrollo local
+# port = 8501      # Dejar que Streamlit use el puerto por defecto
+# address = "0.0.0.0"  # Solo para producción
+enableCORS = false
+enableXsrfProtection = false  # Deshabilitado para evitar problemas en desarrollo
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#2d5016"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+

@@ -31,12 +31,17 @@ def clasificar(texto, abono):
     else:
         if "PAGO: PROVEEDORES" in texto:
             return "2.01.07.01-PROVEEDORES NACIONALES FIJOS"
+        elif "CHEQUE DEPOSITADO MISMO BANCO" in texto:
+            return "PAGO DE FINIQUITO"
+
         elif "PROVISION: PROVEEDORES" in texto:
+            return "2.01.07.01-PROVEEDORES NACIONALES EXISTENCIAS"
+        elif "TRASPASO A:" in texto:
             return "2.01.07.01-PROVEEDORES NACIONALES EXISTENCIAS"
         elif "PROVEEDORES" in texto:
             return "PROVEEDORES NACIONALES"
-        elif "SUELDOS" in texto or "REMUNERACION" in texto:
-            return "REMUNERACIONES POR PAGAR"
+        elif "PROVISION: DE SUELDOS" in texto or "REMUNERACION" in texto:
+            return "2.01.08.01-REMUNERACIONES POR PAGAR"
         elif any(p in texto for p in ["SERVIPAG", "AGUA", "DISTRIBUIDORA", "TRASPASO A"]):
             return "PROVEEDORES NACIONALES"
         elif "HONORARIOS" in texto:
@@ -53,13 +58,15 @@ def clasificar(texto, abono):
             return "SERVICIOS TRANSBANK"
         elif "BRUSSELS" in texto:
             return "SERVICIOS EXTERNOS"
-        elif "COMISION" in texto or "SEGURO" in texto:
+        elif "COMISION" in texto or "SEGURO" in texto or "CARGO SEGUN INSTRUC." in texto:
             return "GASTOS Y COMISIONES BANCARIAS ( BANCO CHILE - SECURITY )"
+        elif "CHEQUE PAGADO POR CAJA" in texto:
+            return "PAGO DE FINIQUITOS"
         elif "PAGO EN SII" in texto:
             return "IMPUESTOS"
         elif "PAGO DE CREDITOS M/N" in texto:
             return "CREDITO BANCO DE CHILE"
-        elif "PAGO AUTOMATICO TARJETA DE CREDITO" in texto:
+        elif "PAGO AUTOMATICO TARJETA DE CREDITO"  in texto or "CARGO POR PAGO TC" in texto: 
             return "PAGO TARJETA DE CREDITO"
         elif any(p in texto for p in ["INVERSIONES ISLA KENT SPA", "INMOBILIARIA MONJITAS SA", "MALSCH Y COMPANIA S.A."]):
             return "2.01.07.01-PROVEEDORES ARRIENDO OFICINA"

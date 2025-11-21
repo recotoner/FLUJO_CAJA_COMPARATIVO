@@ -1,0 +1,31 @@
+{
+  "clasificadores": {
+    "abonos": [
+      {
+        "nombre": "VENTAS",
+        "palabras_clave": ["VENTA", "FACTURA", "COBRO"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "PRESTAMOS",
+        "palabras_clave": ["PRESTAMO", "CREDITO"],
+        "tipo": "contiene_cualquiera"
+      }
+    ],
+    "cargos": [
+      {
+        "nombre": "GASTOS OPERACIONALES",
+        "palabras_clave": ["GASTO", "PAGO A PROVEEDOR"],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "SERVICIOS BASICOS",
+        "palabras_clave": ["LUZ", "AGUA", "GAS", "TELEFONO"],
+        "tipo": "contiene_cualquiera"
+      }
+    ]
+  },
+  "clasificacion_default": "NO CLASIFICADO"
+}
+
+

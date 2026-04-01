@@ -1,0 +1,66 @@
+{
+  "clasificadores": {
+    "abonos": [
+      {
+        "nombre": "PAGO DE CLIENTES",
+        "palabras_clave": ["TRANSFERENCIA DE OTRO BANCO", "DEPOSITO CON DOCUMENTOS", "PAGO PROVEEDORES"],
+        "tipo": "contiene_cualquiera"
+      }
+    ],
+    "cargos": [
+      {
+        "nombre": "honorarios",
+        "palabras_clave": [
+          "TRANSF. PARA FERNANDA BUNSTER",
+          "TRANSF. PARA FRANCISCA LIBERONA",
+          "TRANSF. PARA CAROL PIZARRO",
+          "TRANSF. PARA DANIELA BUSTAMANTE",
+          "TRANSF. PARA LUIS FUENTEALBA",
+          "TRANSF. PARA CLARA BECERRA"
+        ],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "remuneraciones",
+        "palabras_clave": [
+          "TRANSF. PARA AGUSTIN OSSANDON",
+          "TRANSF. PARA GONZALO OSSANDON"
+        ],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "traspaso",
+        "palabras_clave": [
+          "TRANSF. PARA DISTIRBUIDORA DAG SPA"
+        ],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "proveedores",
+        "palabras_clave": [
+          "TRANSF. PARA USKOK",
+          "TRANSF. PARA SHIPIT SPA",
+          "TRANSF. PARA ESTORIL 50",
+          "TRANSF. PARA  LUIS YNEZ DIAZ",
+          "TRANSF. PARA ROSE  SABA",
+          "TRANSF. PARA TABATA NATALY DONOSO LAGOS",
+          "PAGO TARJETA DE CREDITO",
+          "PAC TARJETA DE CREDITO",
+          "GIRO REDBANC"
+        ],
+        "tipo": "contiene_cualquiera"
+      },
+      {
+        "nombre": "imposiciones",
+        "palabras_clave": ["PAGO PREVIRED"],
+        "tipo": "contiene_exacto"
+      },
+      {
+        "nombre": "impuestos",
+        "palabras_clave": ["PAGO SII"],
+        "tipo": "contiene_exacto"
+      }
+    ]
+  },
+  "clasificacion_default": "NO CLASIFICADO"
+}

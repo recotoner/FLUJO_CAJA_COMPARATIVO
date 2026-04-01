@@ -3,6 +3,7 @@ Script para inicializar la base de datos en Render/PostgreSQL.
 Ejecutar una vez después del despliegue.
 """
 from database.connection import init_db
+from database.crud_proyeccion import seed_categorias_financieras
 import os
 import sys
 
@@ -22,16 +23,28 @@ if __name__ == "__main__":
     
     try:
         init_db()
+        n_cat = seed_categorias_financieras()
         print("\n" + "="*60)
         print("✅ BASE DE DATOS INICIALIZADA CORRECTAMENTE")
         print("="*60)
+        print(f"\n📌 Seed categorías financieras: {n_cat} filas nuevas (omitido si ya existían).")
         print("\n📋 Tablas creadas:")
         print("   - usuarios")
         print("   - clasificadores")
         print("   - transacciones")
         print("   - archivos_cargados")
+        print("   - archivos_proyeccion")
         print("   - mapeo_columnas")
         print("   - alertas")
+        print("   - categorias_financieras")
+        print("   - proyeccion_cargas")
+        print("   - proyeccion_facturas")
+        print("   - proyeccion_remuneraciones")
+        print("   - proyeccion_snapshots")
+        print("   - proyeccion_lineas")
+        print("   - proyeccion_importaciones")
+        print("   - proyeccion_egresos_parametricos")
+        print("   - proyeccion_parametros_usuario")
         print("\n💡 Próximo paso: Crear un usuario administrador con:")
         print("   python crear_cliente.py")
         print("="*60 + "\n")

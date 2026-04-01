@@ -63,3 +63,10 @@ Cada archivo debe seguir esta estructura:
 4. La aplicación cargará automáticamente las reglas de clasificación correspondientes
 
 
+
+
+
+
+
+
+

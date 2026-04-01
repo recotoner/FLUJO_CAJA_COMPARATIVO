@@ -89,3 +89,10 @@ copy database/flujo_caja.db database/flujo_caja_backup.db
 Si necesitas algo, solo pregunta. Todo está diseñado para ser simple y automático.
 
 
+
+
+
+
+
+
+

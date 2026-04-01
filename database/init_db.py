@@ -14,10 +14,13 @@ sys.path.insert(0, str(BASE_DIR))
 
 from database.connection import init_db, engine
 from database.models import Base
+from database.crud_proyeccion import seed_categorias_financieras
 
 if __name__ == "__main__":
     print("Creando base de datos...")
     init_db()
+    n = seed_categorias_financieras()
+    print(f"Categorías financieras (seed): {n} nuevas.")
     print("Base de datos lista!")
     print("\nAhora puedes usar el sistema normalmente.")
     print("La base de datos esta en: database/flujo_caja.db")

@@ -69,6 +69,7 @@ def init_db():
     Crea todas las tablas en la base de datos.
     Solo necesitas llamar esto UNA VEZ al inicio.
     """
+    import database.models  # noqa: F401 — registra modelos en Base.metadata
     Base.metadata.create_all(bind=engine)
     if os.getenv("DATABASE_URL"):
         print("Tablas creadas en PostgreSQL")

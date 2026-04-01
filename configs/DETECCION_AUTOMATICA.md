@@ -114,3 +114,10 @@ Si tienes archivos con nombres que no siguen los patrones, puedes:
 4. ✅ Todo funciona sin intervención manual
 
 
+
+
+
+
+
+
+

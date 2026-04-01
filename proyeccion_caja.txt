@@ -1,0 +1,226 @@
+Modulo de Proyeccion de Caja
+Diseno tecnico y funcional — v2.0
+Mejoras incorporadas respecto a v1.0
+Documento de referencia para el desarrollo con Cursor. Contiene arquitectura, esquema BD, logica de
+calculo y wireframes funcionales.
+Resumen de cambios en v2.0
+# Mejora incorporada Impacto
+1 Proyecciones versionadas con snapshot historico CRITICO — trazabilidad y comparacion
+2 Persistencia facturas ERP en PostgreSQL IMPORTANTE — evita perdida de historico
+3 Fechas de impacto en caja para importaciones clarificadas IMPORTANTE — evita distorsion del waterfall
+4 Tabla maestra de categorias financieras IMPORTANTE — coherencia Tab1 y Tab2
+5 Campo tipo_confianza por linea de proyeccion VALOR UX — real vs estimado vs manual
+1. Contexto y Objetivo
+La app FLUJO_CAJA provee analisis historico de cartolas bancarias (Tab 1). Este modulo agrega Tab 2 con
+proyeccion de caja a 30/60/90 dias integrando multiples fuentes de datos sin afectar el codigo existente.
+Principio fundamental: Tab 1 no se toca. Todo el codigo nuevo va en archivos separados.
+2. Arquitectura General
+Componente Tecnologia Rol
+Frontend/Backend Streamlit + Python Interfaz y logica de negocio
+Base de datos PostgreSQL (existente) Persistencia de todos los modulos + snapshots
+Automatizacion Make (scenarios) Extraccion API ERP a Google Sheets a BD
+Capa intermedia Google Sheets Bus de datos ERP — solo lectura para Streamlit
+ERP Kame API REST Fuente facturas por cobrar y pagar
+IDE Cursor Desarrollo con asistencia IA
+Deploy Render (existente) Produccion — solo desde branch main
+Flujo de datos:
+Kame API -> Make (diario) -> Google Sheets -> Streamlit -> PostgreSQL (snapshot)
+Formulario Importaciones -> PostgreSQL -> Proyeccion
+Excel Remuneraciones -> Streamlit parser -> Proyeccion
+Parametros fiscales usuario -> PostgreSQL -> Calculo automatico
+NUEVO v2: Cada proyeccion generada se guarda como snapshot versionado en BD. El sheet de Make es temporal
+— la fuente de verdad historica es PostgreSQL.
+3. Proyecciones Versionadas (CRITICO — nuevo en v2)
+PUNTO MAS IMPORTANTE DEL DISENO — sin esto no hay trazabilidad ni mejora del modelo
+Problema sin versionado:
+Sin snapshot historico cada recalculo sobreescribe la proyeccion anterior. No es posible responder: que
+proyectabamos para marzo hace 4 semanas y que paso realmente?
+Solucion — concepto de snapshot:
+Cada proyeccion generada se guarda con fecha y version. El usuario puede comparar snapshots anteriores contra el
+flujo historico real (Tab 1), midiendo calidad del modelo y desviaciones.
+Esto permite:
+• Comparar proyectado vs real por categoria y periodo
+• Detectar donde el modelo consistentemente se equivoca
+• Dar trazabilidad al cliente — puede ver la evolucion de sus proyecciones
+• Medir la calidad del servicio de Kappo en el tiempo
+Estructura de tablas para versionado:
+proyeccion_snapshots ® cabecera de cada proyeccion (fecha, version, etiqueta)
+proyeccion_lineas ® detalle de cada linea con tipo_confianza y categoria
+4. Modulos del Sistema
+Modulo 1 — Facturas ERP (Kame)
+• Kame API REST — cliente debe contratar acceso API (client_id + client_secret)
+• Make extrae diariamente facturas pendientes de los ultimos 90 dias
+• NUEVO v2: Streamlit persiste las facturas en BD antes de leerlas — el sheet es temporal
+• tipo_confianza = real si tiene fecha_vencimiento directa / estimado si se calcula
+Endpoints Kame necesarios:
+GET /api/v1/documentos/ventas -> facturas por cobrar clientes
+GET /api/v1/documentos/compras -> facturas por pagar proveedores
+Confirmar con Kame: valor estado factura pagada, si entrega fecha_vencimiento directa, si hay paginacion.
+Modulo 2 — Importaciones
+NUEVO v2: Fechas de impacto en caja definidas explicitamente por evento
+Cada evento de una importacion tiene su propia fecha de impacto en caja:
+Evento Fecha de impacto en caja Categoria tipo_confianza
+Pago a proveedor extranjero fecha_pago_proveedor PROVEEDORES EXTRANJmERanOuSal
+Gastos aduana / flete / seguro eta_real o eta_estimada GASTOS IMPORTACION estimado
+IVA diferido importacion dia 12 mes siguiente a eta IVA IMPORTACION estimado
+Si fecha_pago_proveedor no esta ingresada se usa eta_estimada y tipo_confianza = estimado. La app debe advertir
+visualmente cuando una fecha de impacto es estimada.
+Modulo 3 — Egresos Parametricos
+Logica de desfase fiscal: impuestos del mes M se pagan el dia 12 del mes M+1
+IVA_debito(M) = suma monto_iva facturas_ventas mes M
+IVA_credito(M) = suma monto_iva facturas_compras mes M
+IVA_neto(M) = IVA_debito - IVA_credito (negativo = remanente acumulable)
+PPM(M) = suma monto_neto ventas mes M x tasa_ppm_usuario
+fecha_pago = dia 12 mes M+1 -> tipo_confianza = estimado
+Parametro Tipo Default Validacion
+tasa_ppm % numerico Sin default WARNING obligatorio — bloquea proyeccion si no esta
+tasa_retencion_honorarios % numerico 10.75% Solo si paga honorarios
+dia_pago_impuestos entero 1-28 12 Editable por usuario
+dia_pago_remuneraciones entero 1-28 ultimo habil Editable por usuario
+dia_pago_imposiciones entero 1-28 10 Editable por usuario
+5. Esquema de Base de Datos — Tablas Nuevas
+IMPORTANTE: Tablas 100% nuevas. No se modifica ninguna tabla existente.
+Tabla: categorias_financieras (NUEVA — tabla maestra v2)
+Garantiza coherencia de categorias entre Tab 1 historico y Tab 2 proyeccion
+CREATE TABLE categorias_financieras ( id SERIAL PRIMARY KEY, codigo VARCHAR(50) UNIQUE NOT NULL,
+nombre VARCHAR(100) NOT NULL, tipo VARCHAR(20) NOT NULL, -- ingreso / egreso / ambos aplica_tab1
+BOOLEAN DEFAULT TRUE, aplica_tab2 BOOLEAN DEFAULT TRUE, orden_display INTEGER, activo BOOLEAN
+DEFAULT TRUE );
+codigo nombre tipo
+CLIENTES Pago de Clientes ingreso
+PROV_NACIONAL Proveedores Nacionales egreso
+PROV_EXTRANJERO Proveedores Extranjeros egreso
+REMUNERACIONES Remuneraciones egreso
+IMPOSICIONES Imposiciones egreso
+HONORARIOS Honorarios egreso
+IVA IVA Neto egreso
+IVA_IMPORTACION IVA Importacion egreso
+PPM PPM egreso
+RETENCION Retenciones egreso
+GASTOS_IMPORTACION Gastos de Importacion egreso
+IMPUESTOS Impuestos SII egreso
+MULTAS_TGR Multas / TGR egreso
+TRASPASO Traspaso Interno ambos
+ASESORIA Asesoria Estrategica egreso
+Tabla: proyeccion_snapshots (NUEVA — versionado v2)
+CREATE TABLE proyeccion_snapshots ( id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES
+usuarios(id), fecha_proyeccion DATE NOT NULL, periodo_inicio DATE NOT NULL, periodo_fin DATE NOT
+NULL, version INTEGER NOT NULL, etiqueta VARCHAR(100), notas TEXT, created_at TIMESTAMP DEFAULT
+NOW() );
+Tabla: proyeccion_lineas (NUEVA — detalle versionado v2)
+CREATE TABLE proyeccion_lineas ( id SERIAL PRIMARY KEY, snapshot_id INTEGER REFERENCES
+proyeccion_snapshots(id), fecha_impacto DATE NOT NULL, categoria_id INTEGER REFERENCES
+categorias_financieras(id), descripcion VARCHAR(200), monto NUMERIC(15,0), -- positivo=ingreso,
+negativo=egreso tipo_confianza VARCHAR(20), -- real / estimado / manual origen VARCHAR(50), --
+kame_api/importacion/parametrico/remuneraciones referencia_id INTEGER, created_at TIMESTAMP
+DEFAULT NOW() );
+Tabla: proyeccion_importaciones
+CREATE TABLE proyeccion_importaciones ( id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES
+usuarios(id), proveedor_extranjero VARCHAR(200), invoice_numero VARCHAR(100), monto_cif_usd
+NUMERIC(15,2), tipo_cambio_estimado NUMERIC(10,2), monto_cif_clp NUMERIC(15,0), eta_estimada
+DATE, eta_real DATE, gastos_aduana_estimados NUMERIC(15,0), iva_diferido_estimado NUMERIC(15,0),
+fecha_pago_proveedor DATE, fecha_impacto_iva DATE, -- dia 12 mes sig. a eta estado VARCHAR(50),
+notas TEXT, created_at TIMESTAMP DEFAULT NOW() );
+Tabla: proyeccion_egresos_parametricos
+CREATE TABLE proyeccion_egresos_parametricos ( id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES
+usuarios(id), categoria_id INTEGER REFERENCES categorias_financieras(id), descripcion
+VARCHAR(200), monto_estimado NUMERIC(15,0), dia_pago INTEGER, mes_aplicacion DATE, es_recurrente
+BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW() );
+Tabla: proyeccion_facturas_erp
+CREATE TABLE proyeccion_facturas_erp ( id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES
+usuarios(id), tipo VARCHAR(20), -- por_cobrar / por_pagar folio VARCHAR(50), rut_contraparte
+VARCHAR(20), razon_social VARCHAR(200), monto_neto NUMERIC(15,0), monto_iva NUMERIC(15,0),
+monto_total NUMERIC(15,0), fecha_emision DATE, fecha_vencimiento DATE, estado VARCHAR(50),
+tipo_confianza VARCHAR(20), fecha_actualizacion TIMESTAMP );
+Tabla: proyeccion_parametros_usuario
+CREATE TABLE proyeccion_parametros_usuario ( id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES
+usuarios(id) UNIQUE, tasa_ppm NUMERIC(5,4), tasa_retencion_honorarios NUMERIC(5,4) DEFAULT
+0.1075, dia_pago_impuestos INTEGER DEFAULT 12, dia_pago_remuneraciones INTEGER DEFAULT 30,
+dia_pago_imposiciones INTEGER DEFAULT 10, updated_at TIMESTAMP DEFAULT NOW() );
+6. Tipo de Confianza por Linea (nuevo en v2)
+Cada linea de la proyeccion lleva indicador visual de confianza
+tipo_confianza Significado Origen tipico Color UI
+real Dato confirmado del ERP o cartola Kame API con fecha vencimiento directaVerde
+estimado Calculado por el sistema con reglas IVA/PPM calculados, ETA sin confirmar Amarillo
+manual Ingresado manualmente por el usuario Importaciones, egresos parametricos Azul
+Regla de advertencia: si mas del 40% del flujo proyectado es estimado o manual, mostrar warning general indicando
+baja confianza de la proyeccion.
+7. Wireframe Funcional — Tab 2
+Vista principal:
+PROYECCION DE CAJA — [Seleccionar snapshot] o [Nueva proyeccion] — Periodo: [30] [60] [90] dias
+Saldo actual
+(Tab 1)
+Ingresos
+proyectados
+Egresos
+proyectados
+Saldo
+proyectado
+Indice
+confianza
+GRAFICO WATERFALL — Saldo proyectado dia a dia
+Verde=ingreso real | Amarillo=estimado | Azul=manual | Rojo=egreso
+DETALLE POR LINEA FECHA IMPACTO MONTO CONFIANZA ORIGEN
+Facturas por cobrar Kame vencimiento + monto real/est kame_api
+Facturas por pagar Kame vencimiento - monto real/est kame_api
+Pago proveedor extranjero fecha_pago_prov - CIF CLP manual importacion
+Gastos aduana/flete ETA estimada - gastos estimado importacion
+IVA diferido importacion dia 12 mes sig. - IVA estimado importacion
+IVA neto mes anterior dia 12 del mes - calc auto estimado parametrico
+PPM mes anterior dia 12 del mes - calc auto estimado parametrico
+Remuneraciones dia configurado - libro Excel manual remuneraciones
+Imposiciones dia configurado - libro Excel manual remuneraciones
+Vista comparacion proyeccion vs real (nueva en v2):
+COMPARACION: Snapshot [selector] vs Flujo Real del mismo periodo
+Por categoria: proyectado vs real vs desviacion %
+8. Flujo de Onboarding — Cliente Nuevo
+Paso Accion Responsable
+1 Login en la app Cliente
+2 Configurar parametros fiscales (tasa PPM obligatoria — bloquea sin esto) Kappo + Cliente
+3 Configurar dias de pago (impuestos, remuneraciones, imposiciones) Kappo + Cliente
+4 Conectar Kame API (client_id + client_secret) Kappo
+5 Configurar escenario Make para facturas cobrar/pagar Kappo
+6 Primera ejecucion Make — validar datos en Sheet y BD Kappo
+7 Subir primer libro de remuneraciones Excel Cliente
+8 Ingresar importaciones activas al modulo Cliente con guia Kappo
+9 Generar primera proyeccion — etiquetar como v1 Kappo + Cliente
+10 Revisar — explicar indice de confianza al cliente Kappo + Cliente
+El setup inicial (pasos 2-10) es una hora de consultoria cobrable separada del mensual.
+9. Instrucciones para Desarrollo en Cursor
+Archivos nuevos a crear — NO tocar los existentes:
+proyeccion_caja.py -> logica principal Tab 2 + motor snapshots
+modulo_importaciones.py -> formulario y CRUD importaciones
+modulo_egresos.py -> egresos parametricos y calculo fiscal
+modulo_facturas_erp.py -> lectura Google Sheets + sync BD
+modulo_comparacion.py -> vista proyectado vs real
+database/crud_proyeccion.py -> CRUD para todas las tablas nuevas
+database/crud_categorias.py -> CRUD tabla maestra categorias
+Unica modificacion en archivo existente flujo_caja_app.py:
+tab1, tab2 = st.tabs(["Flujo Historico", "Proyeccion de Caja"])
+with tab1:
+# TODO EL CODIGO EXISTENTE SIN CAMBIOS
+with tab2:
+from proyeccion_caja import render_proyeccion
+render_proyeccion(user)
+Orden de desarrollo recomendado:
+Orden Tarea Por que primero
+1 Crear categorias_financieras + seed data Base de todo el sistema
+2 Crear crud_proyeccion.py con todas las tablas Necesario antes de cualquier UI
+3 Modulo importaciones (formulario + CRUD) El mas independiente, sin APIs externas
+4 Parametros fiscales por usuario Necesario antes de calcular IVA/PPM
+5 Motor snapshots (proyeccion_snapshots + lineas) Core del sistema de versionado
+6 Modulo facturas ERP (lectura Sheet + sync BD) Depende de Make configurado
+7 Motor calculo fiscal (IVA/PPM con desfase) Depende de facturas ERP
+8 Grafico waterfall con tipo_confianza Depende de todos los modulos
+9 Vista comparacion proyectado vs real El ultimo — depende de datos historicos
+Prompt inicial para Cursor:
+Quiero agregar un modulo de proyeccion de caja a una app Streamlit existente. La app actual
+(flujo_caja_app.py) NO debe modificarse excepto para agregar un tab nuevo. Todo el codigo nuevo
+va en archivos separados. Tengo PostgreSQL con tablas existentes de usuarios y transacciones.
+Necesito crear las siguientes tablas nuevas: 1. categorias_financieras (tabla maestra) 2.
+proyeccion_snapshots (versionado) 3. proyeccion_lineas (detalle con tipo_confianza) 4.
+proyeccion_importaciones 5. proyeccion_egresos_parametricos 6. proyeccion_facturas_erp 7.
+proyeccion_parametros_usuario Empecemos por: 1. Crear database/crud_proyeccion.py con todas las
+funciones CRUD 2. Crear seed de categorias_financieras con datos iniciales El esquema SQL
+completo esta en el documento de diseno adjunto.
+KAPPO Soluciones Tecnologicas — Documento interno — v2.0 — 2026

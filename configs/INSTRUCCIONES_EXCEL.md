@@ -96,3 +96,10 @@ Colócalo en:
 Puedes usar el archivo `clasificadores_template.xlsx` como base y modificarlo según tus necesidades.
 
 
+
+
+
+
+
+
+

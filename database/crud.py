@@ -3,16 +3,16 @@ Funciones simples para usar la base de datos.
 No necesitas saber SQL - solo llamar estas funciones.
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 from database.models import (
     Usuario, Clasificador, Transaccion, ArchivoCargado, 
-    MapeoColumnas, Alerta, TipoTransaccion
+    MapeoColumnas, Alerta, TipoTransaccion, ArchivoProyeccion
 )
 from database.connection import get_db
 import bcrypt
 import json
-from datetime import datetime
-from typing import Optional, List
+from datetime import datetime, date
+from typing import Optional, List, Tuple
 
 # ============================================
 # FUNCIONES DE USUARIOS
@@ -260,6 +260,37 @@ def obtener_transacciones(
     finally:
         db.close()
 
+
+def obtener_rango_fechas_transacciones(
+    usuario_id: int,
+    archivo_id: Optional[int] = None,
+) -> Tuple[Optional[date], Optional[date]]:
+    """Fecha mínima y máxima de movimientos para cuadrar comparativo proyectado/ejecutado."""
+    db = next(get_db())
+    try:
+        q = db.query(
+            func.min(Transaccion.fecha),
+            func.max(Transaccion.fecha),
+        ).filter(Transaccion.usuario_id == usuario_id)
+        if archivo_id is not None:
+            q = q.filter(Transaccion.archivo_id == archivo_id)
+        row = q.one()
+        dmin, dmax = row[0], row[1]
+
+        def _as_date(x) -> Optional[date]:
+            if x is None:
+                return None
+            if isinstance(x, datetime):
+                return x.date()
+            if isinstance(x, date):
+                return x
+            return x
+
+        return _as_date(dmin), _as_date(dmax)
+    finally:
+        db.close()
+
+
 def obtener_transacciones_sin_clasificar(usuario_id: int) -> List[Transaccion]:
     """Obtiene transacciones que no tienen clasificación o están como 'NO CLASIFICADO'."""
     db = next(get_db())
@@ -449,6 +480,111 @@ def marcar_alerta_leida(alerta_id: int, usuario_id: int) -> bool:
         
         if alerta:
             alerta.leida = True
+            db.commit()
+            return True
+        return False
+    finally:
+        db.close()
+
+# ============================================
+# FUNCIONES DE ARCHIVOS DE PROYECCIÓN
+# ============================================
+
+def guardar_archivo_proyeccion(
+    usuario_id: int,
+    nombre_archivo: str,
+    contenido: bytes,
+    descripcion: Optional[str] = None
+) -> ArchivoProyeccion:
+    """
+    Guarda un archivo de proyección en la base de datos.
+    
+    Args:
+        usuario_id: ID del usuario propietario
+        nombre_archivo: Nombre del archivo
+        contenido: Contenido del archivo Excel como bytes
+        descripcion: Descripción opcional
+    
+    Returns:
+        ArchivoProyeccion: El archivo guardado
+    """
+    db = next(get_db())
+    try:
+        archivo = ArchivoProyeccion(
+            usuario_id=usuario_id,
+            nombre_archivo=nombre_archivo,
+            contenido=contenido,
+            descripcion=descripcion
+        )
+        db.add(archivo)
+        db.commit()
+        db.refresh(archivo)
+        return archivo
+    finally:
+        db.close()
+
+def obtener_archivos_proyeccion(usuario_id: int) -> List[ArchivoProyeccion]:
+    """
+    Obtiene todos los archivos de proyección de un usuario.
+    
+    Args:
+        usuario_id: ID del usuario
+    
+    Returns:
+        List[ArchivoProyeccion]: Lista de archivos de proyección
+    """
+    db = next(get_db())
+    try:
+        return db.query(ArchivoProyeccion).filter(
+            ArchivoProyeccion.usuario_id == usuario_id
+        ).order_by(ArchivoProyeccion.fecha_carga.desc()).all()
+    finally:
+        db.close()
+
+def obtener_archivo_proyeccion(archivo_id: int, usuario_id: int) -> Optional[ArchivoProyeccion]:
+    """
+    Obtiene un archivo de proyección específico.
+    
+    Args:
+        archivo_id: ID del archivo
+        usuario_id: ID del usuario (para verificación de seguridad)
+    
+    Returns:
+        ArchivoProyeccion o None si no existe o no pertenece al usuario
+    """
+    db = next(get_db())
+    try:
+        return db.query(ArchivoProyeccion).filter(
+            and_(
+                ArchivoProyeccion.id == archivo_id,
+                ArchivoProyeccion.usuario_id == usuario_id
+            )
+        ).first()
+    finally:
+        db.close()
+
+def eliminar_archivo_proyeccion(archivo_id: int, usuario_id: int) -> bool:
+    """
+    Elimina un archivo de proyección.
+    
+    Args:
+        archivo_id: ID del archivo
+        usuario_id: ID del usuario (para verificación de seguridad)
+    
+    Returns:
+        bool: True si se eliminó, False si no existe o no pertenece al usuario
+    """
+    db = next(get_db())
+    try:
+        archivo = db.query(ArchivoProyeccion).filter(
+            and_(
+                ArchivoProyeccion.id == archivo_id,
+                ArchivoProyeccion.usuario_id == usuario_id
+            )
+        ).first()
+        
+        if archivo:
+            db.delete(archivo)
             db.commit()
             return True
         return False

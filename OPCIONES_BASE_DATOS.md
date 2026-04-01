@@ -132,3 +132,10 @@ El resto del código **NO cambia** porque SQLAlchemy abstrae la base de datos.
 ¿Con cuál quieres empezar?
 
 
+
+
+
+
+
+
+

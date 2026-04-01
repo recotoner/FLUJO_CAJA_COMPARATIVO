@@ -54,6 +54,7 @@ def login_page():
     }
     
     /* Botón de login verde oscuro con letras blancas - Selectores con máxima especificidad */
+    /* Sobrescribir TODOS los estilos posibles de Streamlit */
     form[data-testid="stForm"] button[type="submit"],
     form[data-testid="stForm"] button[kind="primary"],
     div[data-testid="stForm"] button[type="submit"],
@@ -63,9 +64,18 @@ def login_page():
     .stButton > button[type="submit"],
     .stButton > button[kind="primary"],
     button[type="submit"],
-    button[kind="primary"] {
+    button[kind="primary"],
+    button.element-container button[type="submit"],
+    div.element-container button[type="submit"],
+    div[data-baseweb="button"] button[type="submit"],
+    /* Selectores más específicos para forzar el estilo */
+    [data-testid="stForm"] button[type="submit"],
+    [data-testid="stForm"] button[kind="primary"],
+    /* Sobrescribir cualquier estilo inline */
+    button[style*="background"] {
         background-color: #2d5016 !important;
         background: linear-gradient(135deg, #2d5016 0%, #1f3a0f 100%) !important;
+        background-image: linear-gradient(135deg, #2d5016 0%, #1f3a0f 100%) !important;
         color: white !important;
         font-weight: 600 !important;
         border: none !important;
@@ -85,9 +95,12 @@ def login_page():
     .stButton > button[type="submit"]:hover,
     .stButton > button[kind="primary"]:hover,
     button[type="submit"]:hover,
-    button[kind="primary"]:hover {
+    button[kind="primary"]:hover,
+    [data-testid="stForm"] button[type="submit"]:hover,
+    [data-testid="stForm"] button[kind="primary"]:hover {
         background-color: #1f3a0f !important;
         background: linear-gradient(135deg, #1f3a0f 0%, #2d5016 100%) !important;
+        background-image: linear-gradient(135deg, #1f3a0f 0%, #2d5016 100%) !important;
         border-color: #1f3a0f !important;
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 8px rgba(45, 80, 22, 0.4) !important;
@@ -127,51 +140,109 @@ def login_page():
     </style>
     
     <script>
-    // Función para forzar el color verde en el botón
+    // Función para forzar el color verde en el botón - Versión mejorada y más agresiva
     function forceGreenButton() {
-        var buttons = document.querySelectorAll('button[type="submit"], button[kind="primary"], button');
-        buttons.forEach(function(button) {
-            var text = button.textContent || button.innerText || '';
-            if (text.includes('Iniciar Sesión') || text.includes('🚀') || text.includes('Iniciar')) {
-                button.style.setProperty('background-color', '#2d5016', 'important');
-                button.style.setProperty('background', 'linear-gradient(135deg, #2d5016 0%, #1f3a0f 100%)', 'important');
-                button.style.setProperty('color', 'white', 'important');
-                button.style.setProperty('border', 'none', 'important');
-                button.style.setProperty('border-color', '#2d5016', 'important');
-            }
+        // Buscar todos los botones posibles
+        var selectors = [
+            'button[type="submit"]',
+            'button[kind="primary"]',
+            'form button',
+            '[data-testid="stForm"] button',
+            'button'
+        ];
+        
+        selectors.forEach(function(selector) {
+            var buttons = document.querySelectorAll(selector);
+            buttons.forEach(function(button) {
+                var text = (button.textContent || button.innerText || '').trim();
+                // Verificar si es el botón de login
+                if (text.includes('Iniciar Sesión') || text.includes('Iniciar') || 
+                    text.includes('🚀') || button.getAttribute('data-testid') === 'baseButton-primary') {
+                    
+                    // Forzar estilos con máxima prioridad
+                    button.style.cssText += 'background-color: #2d5016 !important;';
+                    button.style.cssText += 'background: linear-gradient(135deg, #2d5016 0%, #1f3a0f 100%) !important;';
+                    button.style.cssText += 'background-image: linear-gradient(135deg, #2d5016 0%, #1f3a0f 100%) !important;';
+                    button.style.cssText += 'color: white !important;';
+                    button.style.cssText += 'border: none !important;';
+                    button.style.cssText += 'border-color: #2d5016 !important;';
+                    
+                    // Remover cualquier clase que pueda estar aplicando estilos rojos
+                    button.classList.remove('stButton');
+                    if (button.className.includes('red') || button.className.includes('error')) {
+                        button.className = button.className.replace(/red|error/g, '');
+                    }
+                    
+                    // Agregar clase personalizada
+                    button.classList.add('login-green-button');
+                }
+            });
         });
     }
     
     // Ejecutar inmediatamente
-    forceGreenButton();
-    
-    // Ejecutar después de un delay
-    setTimeout(forceGreenButton, 100);
-    setTimeout(forceGreenButton, 500);
-    setTimeout(forceGreenButton, 1000);
-    
-    // Usar MutationObserver para detectar cambios en el DOM
-    var observer = new MutationObserver(function(mutations) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            forceGreenButton();
+            setTimeout(forceGreenButton, 50);
+            setTimeout(forceGreenButton, 100);
+            setTimeout(forceGreenButton, 200);
+            setTimeout(forceGreenButton, 500);
+            setTimeout(forceGreenButton, 1000);
+        });
+    } else {
         forceGreenButton();
+        setTimeout(forceGreenButton, 50);
+        setTimeout(forceGreenButton, 100);
+        setTimeout(forceGreenButton, 200);
+        setTimeout(forceGreenButton, 500);
+        setTimeout(forceGreenButton, 1000);
+    }
+    
+    // Usar MutationObserver para detectar cambios en el DOM - Versión mejorada
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                forceGreenButton();
+            }
+        });
     });
     
-    // Observar cambios en el body
+    // Observar cambios en el body y en todos los elementos
     observer.observe(document.body, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['style', 'class']
+        attributeFilter: ['style', 'class', 'data-testid']
     });
     
-    // También ejecutar cuando el DOM esté completamente cargado
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', forceGreenButton);
-    } else {
+    // Observar también el formulario específico
+    var formObserver = new MutationObserver(function(mutations) {
         forceGreenButton();
-    }
+    });
+    
+    // Cuando el formulario esté disponible, observarlo también
+    setTimeout(function() {
+        var form = document.querySelector('[data-testid="stForm"]');
+        if (form) {
+            formObserver.observe(form, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['style', 'class']
+            });
+        }
+    }, 100);
     
     // Ejecutar periódicamente para asegurar que se mantenga verde
-    setInterval(forceGreenButton, 2000);
+    setInterval(forceGreenButton, 500);
+    
+    // También interceptar eventos de click para reaplicar estilos
+    document.addEventListener('click', function(e) {
+        if (e.target.tagName === 'BUTTON') {
+            setTimeout(forceGreenButton, 10);
+        }
+    }, true);
     </script>
     """, unsafe_allow_html=True)
     

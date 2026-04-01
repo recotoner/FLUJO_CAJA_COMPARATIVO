@@ -1,0 +1,332 @@
+KAPPO
+Soluciones Tecnológicas
+
+
+Módulo de Proyección de Caja
+Diseño Técnico y Funcional — v3.0
+Documento de referencia para desarrollo con Cursor IDE
+
+Versión	Fecha	Estado	Autor
+v3.0	Marzo 2026	En revisión	Kappo Tecnologías
+v2.0	Febrero 2026	Superada	Kappo Tecnologías
+
+ 
+1. Resumen Ejecutivo
+Este documento describe la arquitectura, esquema de base de datos, lógica de cálculo y wireframes funcionales del Módulo de Proyección de Caja (Tab 2) que se agregará a la aplicación FLUJO_CAJA existente.
+
+1.1 Cambios respecto a v2.0
+
+#	Cambio	Justificación	Impacto
+1	Eliminación de la capa Make + Google Sheets como bus de datos principal	Reducción de puntos de fallo. La carga directa via Excel export es más robusta y universal	CRÍTICO
+2	Nuevo patrón de carga universal: upload Excel CxC/CxP (igual que Tab 1 con cartolas)	Funciona con cualquier ERP que exporte Excel, no solo Kame. Sin API, sin costo adicional	CRÍTICO
+3	Tabla proyeccion_remuneraciones para persistir datos de remuneraciones	Elimina fragilidad del parser volatil. Los datos persisten entre proyecciones	IMPORTANTE
+4	Modo operación dual: carga manual + integración futura opcional	El sistema funciona desde día 1 sin APIs. La integración Make/API es capa adicional no bloqueante	IMPORTANTE
+5	Desacoplamiento explicito Tab 1 / categorias_financieras	Tab 1 nunca lee la tabla maestra. Coherencia por convención de nombres, no por FK	IMPORTANTE
+6	Snapshots versionados mantenidos de v2.0	Sin cambios — es la decision mas importante del diseño anterior	CRITICO
+
+PRINCIPIO FUNDAMENTAL	Tab 1 no se toca bajo ninguna circunstancia. Todo el código nuevo va en archivos separados. Tab 1 es producción con cliente real.
+
+ 
+2. Arquitectura General
+
+Componente	Tecnología	Rol
+Frontend / Backend	Streamlit + Python	Interfaz, lógica de negocio, parser de archivos
+Base de datos	PostgreSQL (existente)	Persistencia de todos los módulos + snapshots
+Carga de datos ERP	Upload Excel (CxC / CxP)	Cliente exporta desde su ERP y sube el archivo — igual que Tab 1 con cartolas
+Carga de remuneraciones	Upload Excel (libro de sueldos)	Parser normaliza y persiste en tabla propia
+Integración futura (opcional)	Make + API ERP	Capa adicional que alimenta las mismas tablas. No bloquea arranque
+IDE	Cursor	Desarrollo asistido por IA
+Deploy	Render (existente)	Producción — solo desde branch main
+
+2.1 Flujo de Datos
+El flujo de datos sigue el mismo patrón que Tab 1, extendido para tres fuentes adicionales:
+
+Fuente	→	Acción	→	Destino
+ERP (cualquier: Kame, Defontana, Bsale…)	→	Cliente exporta Excel CxC / CxP y lo sube a la app	→	PostgreSQL (proyeccion_facturas + proyeccion_cargas)
+Libro de sueldos Excel	→	Cliente sube archivo, parser normaliza	→	PostgreSQL (proyeccion_remuneraciones)
+Formulario importaciones	→	Ingreso manual en la app	→	PostgreSQL (proyeccion_importaciones)
+Parámetros fiscales usuario	→	Configuración inicial + ajustes	→	PostgreSQL (proyeccion_parametros_usuario)
+Make + API ERP (futuro, opcional)	→	Carga automática periódica	→	Mismas tablas PostgreSQL — mismo destino
+
+CLAVE v3.0	PostgreSQL es la única fuente de verdad. Los archivos Excel son medios de entrada temporales, no fuentes persistentes. Esto elimina la dependencia de Google Sheets como bus de datos.
+
+ 
+3. Patrón Universal de Carga (Nuevo en v3.0)
+Este es el cambio arquitectural más importante respecto a v2.0. Reemplaza la dependencia de API Kame + Make + Google Sheets por un mecanismo de carga directa universal.
+
+3.1 Concepto: Upload Excel igual que Tab 1
+Tab 1 ya demuestra el patrón correcto: el cliente sube un Excel (cartola bancaria), el sistema lo parsea, lo guarda en BD, y puede consultarlo n veces sin re-subir. Tab 2 adopta exactamente el mismo patrón para CxC y CxP.
+
+Tab 1 (existente)	Tab 2 (nuevo)
+Cliente sube Excel de cartola bancaria	Cliente sube Excel de CxC exportado desde ERP
+Parser lee columnas del banco	Parser lee columnas estándar: fecha_vencimiento, saldo, razón_social
+Datos guardados en BD con fecha de carga	Datos guardados en proyeccion_facturas con fecha_carga
+Cliente puede consultar análisis sin re-subir	Cliente puede generar proyecciones sin re-subir
+Nueva carga reemplaza la anterior	Nueva carga crea registro en proyeccion_cargas (historial)
+
+3.2 Compatibilidad con ERPs
+El parser acepta cualquier Excel de CxC/CxP que contenga las columnas mínimas requeridas. Las columnas adicionales se ignoran sin error.
+
+Campo requerido	Kame	Defontana	Bsale / Otros
+fecha_vencimiento	Fecha Vencimiento	Fecha Vto	Fecha Vencimiento
+saldo	Saldo	Monto Pendiente	Saldo
+razon_social	Razón Social	Cliente / Proveedor	Razón Social
+monto_total	Total Doc	Monto Total	Total
+fecha_emision (opcional)	Fecha Emisión	Fecha Emisión	Fecha
+
+ESCALABILIDAD	El parser puede extenderse con un archivo de mapeo de columnas por ERP (YAML/JSON). Esto permite agregar nuevos ERPs sin tocar código Python — solo se agrega el mapeo.
+
+ 
+4. Proyecciones Versionadas (Crítico — mantenido de v2.0)
+PUNTO MÁS IMPORTANTE DEL DISEÑO	Sin snapshot histórico, cada recálculo sobreescribe la proyección anterior. No es posible responder: ¿qué proyectábamos para abril hace 3 semanas y qué pasó realmente?
+
+Cada proyección generada se guarda como snapshot versionado en BD. El usuario puede comparar snapshots anteriores contra el flujo histórico real (Tab 1), midiendo calidad del modelo.
+
+Esto permite:
+•	Comparar proyectado vs real por categoría y periodo
+•	Detectar dónde el modelo consistentemente se equivoca
+•	Dar trazabilidad al cliente — puede ver la evolución de sus proyecciones
+•	Medir la calidad del servicio de Kappo en el tiempo
+
+ 
+5. Módulos del Sistema
+Módulo 1 — Facturas ERP (CxC / CxP)
+NUEVO en v3.0: carga por upload Excel, sin dependencia de API ni Make.
+
+Aspecto	Descripción
+Fuente de datos	Export Excel desde cualquier ERP — mismo archivo que el cliente ya usa
+Mecanismo de carga	Drag & drop en la app (igual que cartola en Tab 1)
+Parser	Lee columnas mínimas + ignora extras. Mapeo configurable por ERP
+Persistencia	proyeccion_facturas en BD. El Excel es descartable después de la carga
+Historial de cargas	proyeccion_cargas registra cada upload con fecha, usuario y origen
+tipo_confianza	real si fecha_vencimiento viene directa del ERP, estimado si es calculada
+Integración Make/API	Capa futura opcional. Usa las mismas tablas BD sin cambiar nada
+
+Módulo 2 — Importaciones
+Sin cambios respecto a v2.0. Ingreso manual via formulario en la app.
+
+Evento	Fecha de impacto en caja	Categoría	tipo_confianza
+Pago a proveedor extranjero	fecha_pago_proveedor	PROVEEDORES_EXTRANJEROS	manual
+Gastos aduana / flete / seguro	eta_real o eta_estimada	GASTOS_IMPORTACION	estimado
+IVA diferido importación	Día 12 mes siguiente a ETA	IVA_IMPORTACION	estimado
+
+Módulo 3 — Remuneraciones (Mejorado en v3.0)
+CAMBIO v3.0: los datos de remuneraciones ahora persisten en BD. El Excel ya no es fuente volátil.
+
+Aspecto	Descripción
+Carga	Upload Excel libro de sueldos (igual que CxC/CxP)
+Persistencia	proyeccion_remuneraciones con campos: empleado, monto_liquido, mes_aplicacion, dia_pago
+Estimación	Si no hay carga del mes actual, el sistema usa datos del mes anterior con tipo_confianza = estimado
+Imponible	Se calcula proporción imponible para proyección de imposiciones (AFP/Salud)
+
+Módulo 4 — Egresos Paramétricos
+Sin cambios respecto a v2.0. Lógica de desfase fiscal:
+
+Parámetro	Tipo	Default	Validación	Obligatorio
+tasa_ppm	%	Sin default	WARNING	Sí — bloquea proyección
+tasa_retencion_honorarios	%	10.75%	0–30%	Solo si paga honorarios
+dia_pago_impuestos	entero	12	1–28	No
+dia_pago_remuneraciones	entero	últ. hábil	1–28	No
+dia_pago_imposiciones	entero	10	1–28	No
+
+ 
+6. Esquema de Base de Datos — Tablas Nuevas
+IMPORTANTE	Tablas 100% nuevas. No se modifica ninguna tabla existente de Tab 1.
+
+6.1 Tablas de Control de Carga (Nuevas en v3.0)
+
+Tabla	Nueva en	Propósito
+proyeccion_cargas	v3.0	Registro de cada upload de archivo. Cabecera del historial de cargas.
+proyeccion_facturas	v3.0	CxC y CxP parseadas y normalizadas desde Excel. Reemplaza proyeccion_facturas_erp de v2.0.
+proyeccion_remuneraciones	v3.0	Datos de remuneraciones persistidos desde libro de sueldos. Nuevo en v3.0.
+categorias_financieras	v2.0	Tabla maestra de categorías. Sin cambios desde v2.0.
+proyeccion_snapshots	v2.0	Cabecera de cada proyección versionada. Sin cambios.
+proyeccion_lineas	v2.0	Detalle de cada línea con tipo_confianza. Sin cambios.
+proyeccion_importaciones	v2.0	Formulario de importaciones. Sin cambios.
+proyeccion_egresos_parametricos	v2.0	Egresos periódicos paramétricos. Sin cambios.
+proyeccion_parametros_usuario	v2.0	Tasas PPM, retención y días de pago. Sin cambios.
+
+6.2 DDL Tablas Nuevas v3.0
+
+-- Tabla: proyeccion_cargas
+CREATE TABLE proyeccion_cargas (
+  id              SERIAL PRIMARY KEY,
+  user_id         INTEGER REFERENCES usuarios(id),
+  tipo            VARCHAR(20) NOT NULL,  -- cxc / cxp / remuneraciones
+  nombre_archivo  VARCHAR(200),
+  fecha_carga     TIMESTAMP DEFAULT NOW(),
+  origen          VARCHAR(50) DEFAULT 'upload_excel',  -- upload_excel / kame_api / make
+  total_registros INTEGER,
+  notas           TEXT
+);
+ 
+-- Tabla: proyeccion_facturas (reemplaza proyeccion_facturas_erp de v2.0)
+CREATE TABLE proyeccion_facturas (
+  id                SERIAL PRIMARY KEY,
+  carga_id          INTEGER REFERENCES proyeccion_cargas(id),
+  user_id           INTEGER REFERENCES usuarios(id),
+  tipo              VARCHAR(20) NOT NULL,  -- por_cobrar / por_pagar
+  rut_contraparte   VARCHAR(20),
+  razon_social      VARCHAR(200),
+  folio             VARCHAR(50),
+  monto_neto        NUMERIC(15,0),
+  monto_iva         NUMERIC(15,0),
+  monto_total       NUMERIC(15,0),
+  saldo             NUMERIC(15,0),
+  fecha_emision     DATE,
+  fecha_vencimiento DATE NOT NULL,
+  condicion_venta   VARCHAR(50),
+  estado            VARCHAR(50),
+  tipo_confianza    VARCHAR(20) DEFAULT 'real',
+  created_at        TIMESTAMP DEFAULT NOW()
+);
+ 
+-- Tabla: proyeccion_remuneraciones (nueva en v3.0)
+CREATE TABLE proyeccion_remuneraciones (
+  id              SERIAL PRIMARY KEY,
+  carga_id        INTEGER REFERENCES proyeccion_cargas(id),
+  user_id         INTEGER REFERENCES usuarios(id),
+  empleado        VARCHAR(200),
+  rut_empleado    VARCHAR(20),
+  mes_aplicacion  DATE NOT NULL,
+  monto_bruto     NUMERIC(15,0),
+  monto_liquido   NUMERIC(15,0),
+  monto_imponible NUMERIC(15,0),
+  monto_afp       NUMERIC(15,0),
+  monto_salud     NUMERIC(15,0),
+  dia_pago        INTEGER,
+  created_at      TIMESTAMP DEFAULT NOW()
+);
+
+ 
+7. Tipo de Confianza por Línea
+
+tipo_confianza	Significado	Origen típico	Color UI
+real	Dato confirmado del ERP o cartola	Kame API con fecha_vencimiento directa / upload Excel	Verde
+estimado	Calculado por el sistema con reglas	IVA/PPM calculados, ETA sin confirmar	Amarillo
+manual	Ingresado manualmente por el usuario	Importaciones, egresos paramétricos	Azul
+
+REGLA DE ADVERTENCIA	Si más del 40% del flujo proyectado es estimado o manual, mostrar warning general indicando baja confianza de la proyección. El número exacto es configurable por parámetro.
+
+ 
+8. Wireframe Funcional — Tab 2
+
+8.1 Vista Principal
+
+PROYECCIÓN DE CAJA  —  [Seleccionar snapshot] o [Nueva proyección]  —  Periodo: [30] [60] [90] días
+Saldo actual (Tab 1)	Ingresos proyectados	Egresos proyectados	Índice confianza
+
+GRAFICO WATERFALL — Saldo proyectado día a día Verde=ingreso real | Amarillo=estimado | Azul=manual | Rojo=egreso
+Concepto	Fecha impacto	Monto	Confianza	Origen
+Facturas por cobrar (ERP)	Vencimiento	+monto	real/est	upload_excel
+Facturas por pagar (ERP)	Vencimiento	−monto	real/est	upload_excel
+Pago proveedor extranjero	fecha_pago_prov	−CIF CLP	manual	importacion
+Gastos aduana/flete	ETA estimada	−gastos	estimado	importacion
+IVA diferido importación	día 12 mes sig.	−IVA	estimado	importacion
+IVA neto mes anterior	día 12 del mes	−calc auto	estimado	parametrico
+PPM mes anterior	día 12 del mes	−calc auto	estimado	parametrico
+Remuneraciones	día configurado	−libro	manual	remuneraciones
+Imposiciones	día configurado	−libro	manual	remuneraciones
+
+
+8.2 Sección de Carga de Datos
+Nueva sección dentro de Tab 2 para gestionar las cargas de archivos:
+
+Sección	Acción del usuario	Resultado
+Cargar CxC	Sube Excel de cuentas por cobrar exportado del ERP	Parser valida columnas, guarda en BD, muestra resumen: N facturas, rango fechas, total
+Cargar CxP	Sube Excel de cuentas por pagar exportado del ERP	Idem CxC. Ambas cargas se pueden hacer independientemente
+Cargar Remuneraciones	Sube libro de sueldos Excel	Parser normaliza empleados, montos y días de pago. Guarda en BD
+Historial de cargas	Visualiza últimas N cargas por tipo	Fecha, archivo, total registros, origen
+
+8.3 Vista Comparación Proyectado vs Real
+COMPARACIÓN: Snapshot [selector] vs Flujo Real del mismo periodo (Tab 1)
+Por categoría: proyectado vs real vs desviación %
+
+ 
+9. Orden de Desarrollo en Cursor
+
+N	Tarea	Por qué primero	Archivos
+1	Crear categorias_financieras + seed data	Base de todo el sistema	crud_categorias.py
+2	Crear proyeccion_cargas + proyeccion_facturas	Tablas de carga antes que cualquier UI	crud_proyeccion.py
+3	Parser Excel CxC/CxP con mapeo de columnas	Módulo más independiente, sin APIs externas	modulo_carga_erp.py
+4	Parser Excel remuneraciones + tabla BD	El segundo módulo sin dependencias externas	modulo_remuneraciones.py
+5	Parámetros fiscales por usuario	Necesario antes de calcular IVA/PPM	modulo_parametros.py
+6	Motor snapshots (proyeccion_snapshots + lineas)	Core del sistema de versionado	proyeccion_caja.py
+7	Módulo importaciones (formulario + CRUD)	Puede desarrollarse en paralelo a paso 6	modulo_importaciones.py
+8	Motor cálculo fiscal (IVA/PPM con desfase)	Depende de facturas cargadas	Motor dentro de proyeccion_caja.py
+9	Gráfico waterfall con tipo_confianza	Depende de todos los módulos	Componente visual en proyeccion_caja.py
+10	Vista comparación proyectado vs real	El último — depende de datos históricos	modulo_comparacion.py
+
+9.1 Archivos nuevos a crear
+
+Archivo	Contenido
+proyeccion_caja.py	Lógica principal Tab 2 + motor snapshots
+modulo_carga_erp.py	Parser Excel CxC/CxP + upload + CRUD facturas (NUEVO v3.0)
+modulo_importaciones.py	Formulario y CRUD importaciones
+modulo_egresos.py	Egresos paramétricos y cálculo fiscal
+modulo_remuneraciones.py	Parser Excel sueldos + persistencia BD (NUEVO v3.0)
+modulo_comparacion.py	Vista proyectado vs real
+database/crud_proyeccion.py	CRUD para todas las tablas nuevas
+database/crud_categorias.py	CRUD tabla maestra categorías
+config/erp_column_map.yaml	Mapeo de columnas por ERP (NUEVO v3.0)
+
+9.2 Única modificación en flujo_caja_app.py
+
+# flujo_caja_app.py — UNICA MODIFICACION PERMITIDA
+tab1, tab2 = st.tabs(['Flujo Histórico', 'Proyección de Caja'])
+ 
+with tab1:
+    # TODO EL CODIGO EXISTENTE SIN CAMBIOS
+    pass
+ 
+with tab2:
+    from proyeccion_caja import render_proyeccion
+    render_proyeccion(user)
+
+9.3 Prompt inicial para Cursor
+
+Quiero agregar un módulo de proyección de caja a una app Streamlit existente.
+La app actual (flujo_caja_app.py) NO debe modificarse excepto para agregar un tab nuevo.
+Todo el código nuevo va en archivos separados.
+ 
+Arquitectura de datos:
+- PostgreSQL existente con tablas de usuarios y transacciones
+- El cliente carga su CxC y CxP exportando Excel desde su ERP y subiténdolo
+  a la app (mismo patrón que Tab 1 con cartolas bancarias)
+- Sin dependencia de APIs externas ni Google Sheets en el flujo principal
+ 
+Tablas nuevas a crear (en orden):
+1. categorias_financieras (tabla maestra con seed data)
+2. proyeccion_cargas (historial de uploads)
+3. proyeccion_facturas (CxC/CxP parseadas y normalizadas)
+4. proyeccion_remuneraciones (libro de sueldos persistido)
+5. proyeccion_snapshots (versionado de proyecciones)
+6. proyeccion_lineas (detalle con tipo_confianza)
+7. proyeccion_importaciones
+8. proyeccion_egresos_parametricos
+9. proyeccion_parametros_usuario
+ 
+Empezar por:
+1. database/crud_proyeccion.py con todas las funciones CRUD
+2. Seed de categorias_financieras con datos iniciales
+3. modulo_carga_erp.py con parser Excel para CxC/CxP
+El esquema SQL completo está en el documento de diseño v3.0 adjunto.
+
+ 
+10. Flujo de Onboarding — Cliente Nuevo
+
+Paso	Acción	Responsable
+1	Login en la app	Cliente
+2	Configurar parámetros fiscales (tasa PPM obligatoria — bloquea sin esto)	Kappo + Cliente
+3	Configurar días de pago (impuestos, remuneraciones, imposiciones)	Kappo + Cliente
+4	Exportar CxC desde ERP y subir a la app	Cliente con guía Kappo
+5	Exportar CxP desde ERP y subir a la app	Cliente con guía Kappo
+6	Validar facturas cargadas: conteo, fechas, montos	Kappo
+7	Subir primer libro de remuneraciones	Cliente con guía Kappo
+8	Ingresar importaciones activas al módulo	Cliente con guía Kappo
+9	Generar primera proyección — etiquetar como v1	Kappo + Cliente
+10	Revisar — explicar índice de confianza al cliente	Kappo + Cliente
+
+FACTURACIÓN	El setup inicial (pasos 2–10) es una hora de consultoría cobrable separada del mensual. Con el nuevo flujo sin API, el tiempo de setup se reduce significativamente.
+
+KAPPO Soluciones Tecnológicas

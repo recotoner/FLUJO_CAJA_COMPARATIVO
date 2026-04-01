@@ -1,0 +1,87 @@
+{
+  "clasificadores": {
+    "abonos": [
+      {
+        "nombre": "PAGO DE CLIENTES",
+        "palabras_clave": ["Transferencia de otro banco", "DEPOSITO CON DOCUMENTOS", "PAGO PROVEEDORES"],
+        "tipo": "contiene_cualquiera",
+        "nota": "Abonos via transferencias bancarias entrantes y depósitos de clientes"
+      }
+    ],
+    "cargos": [
+      {
+        "nombre": "honorarios",
+        "palabras_clave": [
+          "TRANSF. PARA Fernanda Bunster",
+          "TRANSF. PARA FRANCISCA LIBERONA",
+          "TRANSF. PARA CAROL PIZARRO",
+          "TRANSF. PARA Daniela Bustamante",
+          "TRANSF. PARA LUIS FUENTEALBA",
+          "TRANSF. PARA Clara Becerra"
+        ],
+        "tipo": "contiene_cualquiera",
+        "nota": "Transferencias a personas naturales que emiten boleta de honorarios. Agregar nuevos nombres aquí."
+      },
+      {
+        "nombre": "remuneraciones",
+        "palabras_clave": [
+          "TRANSF. PARA Agustin Ossandon",
+          "TRANSF. PARA Gonzalo Ossandon"
+        ],
+        "tipo": "contiene_cualquiera",
+        "nota": "Transferencias a empleados con contrato. Agregar nuevos empleados aquí."
+      },
+      {
+        "nombre": "traspaso",
+        "palabras_clave": [
+          "TRANSF. PARA distirbuidora dag spa"
+        ],
+        "tipo": "contiene_cualquiera",
+        "nota": "Traspasos internos entre cuentas propias o filiales"
+      },
+      {
+        "nombre": "proveedores",
+        "palabras_clave": [
+          "TRANSF. PARA USKOK",
+          "TRANSF. PARA Shipit SPA",
+          "TRANSF. PARA Estoril 50",
+          "TRANSF. PARA  Luis Ynez Diaz",
+          "TRANSF. PARA Rose  Saba",
+          "TRANSF. PARA TABATA NATALY DONOSO LAGOS"
+        ],
+        "tipo": "contiene_cualquiera",
+        "nota": "Transferencias a proveedores. Agregar nuevos proveedores aquí."
+      },
+      {
+        "nombre": "proveedores",
+        "palabras_clave": ["Pago tarjeta de credito", "PAC Tarjeta de Credito", "GIRO REDBANC"],
+        "tipo": "contiene_cualquiera",
+        "nota": "Pagos con tarjeta de crédito y giros cajero automático"
+      },
+      {
+        "nombre": "imposiciones",
+        "palabras_clave": ["PAGO PREVIRED"],
+        "tipo": "contiene_exacto",
+        "nota": "Pago de cotizaciones previsionales vía Previred"
+      },
+      {
+        "nombre": "impuestos",
+        "palabras_clave": ["PAGO SII"],
+        "tipo": "contiene_exacto",
+        "nota": "Pagos al Servicio de Impuestos Internos"
+      }
+    ]
+  },
+  "clasificacion_default": "NO CLASIFICADO",
+  "metadata": {
+    "fuente": "Cartola enero 2026 - Cuenta 9022430",
+    "generado_desde": "CLASIFICADOR.xlsx",
+    "version": "1.0",
+    "instrucciones": {
+      "contiene_exacto": "El detalle debe ser exactamente igual a la palabra clave (case-insensitive)",
+      "contiene_cualquiera": "El detalle debe contener al menos una de las palabras clave (case-insensitive)",
+      "prioridad": "Los cargos/abonos se evalúan en orden; gana la primera regla que coincida",
+      "mantencion": "Para agregar nuevos proveedores, honorarios o empleados, agregar sus nombres en la lista 'palabras_clave' de la regla correspondiente"
+    }
+  }
+}

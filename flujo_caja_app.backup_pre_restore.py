@@ -6,7 +6,6 @@ import io
 import json
 import os
 import re
-import hashlib
 import tempfile
 from pathlib import Path
 from datetime import datetime
@@ -188,35 +187,6 @@ st.markdown("""
     .uploadedFile {
         border-radius: 6px;
         padding: 0.5rem;
-    }
-
-    /* Tabs principales (Flujo Historico / Proyeccion) mas visibles */
-    .stTabs [data-baseweb="tab-list"] {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.65rem;
-        margin: 0.35rem 0 1rem 0;
-        border-bottom: 2px solid #d7e3ef;
-        padding-bottom: 0.35rem;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 52px;
-        width: 100%;
-        justify-content: center;
-        padding: 0 1.2rem;
-        border-radius: 12px 12px 0 0;
-        font-size: 1.12rem;
-        font-weight: 700;
-        line-height: 1.1;
-        color: #26415a;
-        background: #eef3f8;
-        border: 1px solid #d2dde8;
-    }
-    .stTabs [aria-selected="true"] {
-        color: #ffffff !important;
-        background: linear-gradient(135deg, #1f77b4 0%, #2a9d8f 100%) !important;
-        border-color: transparent !important;
-        box-shadow: 0 4px 10px rgba(31, 119, 180, 0.28);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -620,47 +590,6 @@ def convertir_clasificadores_bd_a_dict(clasificadores_bd):
     
     return config
 
-
-def fusionar_configs_clasificadores(config_base, config_usuario):
-    """
-    Fusiona config base + config usuario (BD) sin perder reglas existentes.
-    Prioriza las reglas del usuario evaluándolas primero.
-    """
-    def _lista(cfg, key):
-        if not cfg:
-            return []
-        return cfg.get("clasificadores", {}).get(key, []) or []
-
-    def _firma(regla):
-        nombre = str(regla.get("nombre", "")).strip()
-        tipo = str(regla.get("tipo", "contiene_cualquiera")).strip()
-        palabras = tuple(sorted(str(p).strip() for p in (regla.get("palabras_clave", []) or []) if str(p).strip()))
-        excluir = tuple(sorted(str(p).strip() for p in (regla.get("excluir", []) or []) if str(p).strip()))
-        return (nombre, tipo, palabras, excluir)
-
-    fusion = {
-        "clasificadores": {"abonos": [], "cargos": []},
-        "clasificacion_default": "NO CLASIFICADO"
-    }
-    if config_base and config_base.get("clasificacion_default"):
-        fusion["clasificacion_default"] = config_base.get("clasificacion_default")
-    if config_usuario and config_usuario.get("clasificacion_default"):
-        fusion["clasificacion_default"] = config_usuario.get("clasificacion_default")
-
-    for lista_key in ["abonos", "cargos"]:
-        seen = set()
-        # Usuario primero (prioridad), luego base
-        for regla in (_lista(config_usuario, lista_key) + _lista(config_base, lista_key)):
-            if not isinstance(regla, dict):
-                continue
-            sig = _firma(regla)
-            if sig in seen:
-                continue
-            seen.add(sig)
-            fusion["clasificadores"][lista_key].append(regla)
-
-    return fusion
-
 def clasificar_mejorado(texto, abono, config_clasificadores):
     """
     Clasifica una transacción según el texto y el monto de abono.
@@ -776,14 +705,7 @@ def encontrar_fila_encabezados(path):
     Returns:
         int: Número de fila (0-indexed) donde están los encabezados, o 0 si no se encuentra
     """
-    palabras_clave = [
-        'FECHA', 'DESCRIPCION',
-        'ABONOS', 'INGRESOS', 'ENTRADAS', 'CREDITO', 'ABONO',
-        'DEPOSITOS', 'DEPOSITO', 'DEPOSIT',
-        'CARGOS', 'EGRESOS', 'SALIDAS', 'DEBITO',
-        'SALDO',
-        'CANAL', 'SUCURSAL', 'DOCTO', 'DOCUMENTO', 'GLOSA', 'DETALLE', 'FECHA OPERACION'
-    ]
+    palabras_clave = ['FECHA', 'DESCRIPCION', 'ABONOS', 'CARGOS', 'SALDO', 'CANAL', 'SUCURSAL', 'DOCTO', 'DOCUMENTO', 'GLOSA', 'DETALLE', 'FECHA OPERACION']
     
     try:
         # Leer las primeras 20 filas para buscar encabezados
@@ -911,39 +833,16 @@ def cargar_datos(path, config_clasificadores):
         # Buscar ABONOS
         if "ABONOS (CLP)" not in df.columns:
             for col in df.columns:
-                col_upper = str(col).upper()
                 if "ABONO" in col.upper() and "CLP" in col.upper():
                     mapeo_columnas[col] = "ABONOS (CLP)"
                     break
-                elif (
-                    ("ABONO" in col_upper)
-                    or ("DEPOSITO" in col_upper)
-                    or ("DEPOSITOS" in col_upper)
-                    or ("INGRESO" in col_upper)
-                    or ("ENTRADA" in col_upper)
-                    or ("CREDITO" in col_upper)
-                ):
-                    # Evitar columnas que claramente representan egresos/cargos.
-                    if any(k in col_upper for k in ["DEBITO", "EGRESO", "EGRESOS", "CARGO", "CARGOS", "SALIDA", "SALIDAS"]):
-                        continue
+                elif "ABONO" in col.upper():
+                    mapeo_columnas[col] = "ABONOS (CLP)"
+                    break
+                elif "CREDITO" in col.upper() and "CLP" in col.upper():
                     mapeo_columnas[col] = "ABONOS (CLP)"
                     break
         
-        # Buscar CARGOS (muchos bancos cambian encabezados: CARGOS/DEBITO/EGRESOS)
-        if "CARGOS (CLP)" not in df.columns:
-            for col in df.columns:
-                col_upper = col.upper()
-                # Incluye variantes con y sin "(CLP)"
-                if ("CARGO" in col_upper or "DEBITO" in col_upper or "DÉBITO" in col_upper) and "CLP" in col_upper:
-                    mapeo_columnas[col] = "CARGOS (CLP)"
-                    break
-                if ("CARGOS" in col_upper or "EGRESO" in col_upper or "EGRESOS" in col_upper) and ("CLP" in col_upper or True):
-                    mapeo_columnas[col] = "CARGOS (CLP)"
-                    break
-                if ("DEBITO" in col_upper or "DÉBITO" in col_upper) and ("CLP" in col_upper):
-                    mapeo_columnas[col] = "CARGOS (CLP)"
-                    break
-
         # Aplicar mapeo
         if mapeo_columnas:
             df.rename(columns=mapeo_columnas, inplace=True)
@@ -953,13 +852,9 @@ def cargar_datos(path, config_clasificadores):
         columnas_faltantes = [col for col in columnas_requeridas if col not in df.columns]
         
         if columnas_faltantes:
-            # Aviso amigable para el cliente: formato no corresponde a "Cartola Histórica"
-            st.warning(
-                "⚠️ Este archivo no parece tener el formato esperado (Cartola Histórica). "
-                "Vuelve a descargar/subir la 'Cartola Histórica' del banco (no 'Movimientos del mes')."
-            )
+            # Mostrar columnas disponibles para ayudar al usuario
+            st.error(f"❌ El archivo no contiene las columnas requeridas: {', '.join(columnas_faltantes)}")
             st.info(f"💡 Columnas encontradas en el archivo: {', '.join(df.columns.tolist()[:15])}")
-            st.caption(f"Detalles técnicos (faltan columnas mínimas): {', '.join(columnas_faltantes)}")
             
             # Mostrar primeras filas para ayudar a entender la estructura
             with st.expander("🔍 Ver primeras filas del archivo (para depuración)"):
@@ -973,10 +868,6 @@ def cargar_datos(path, config_clasificadores):
         df["DESCRIPCION"] = df["DESCRIPCION"].astype(str)
         df["COMENTARIO"] = df["DESCRIPCION"].apply(normalizar)
         df["FECHA"] = pd.to_datetime(df["FECHA"], dayfirst=True, errors='coerce')
-
-        # Si no se pudo identificar CARGOS, crearla para que métricas/gráficos no fallen
-        if "CARGOS (CLP)" not in df.columns:
-            df["CARGOS (CLP)"] = 0
 
         # Clasificar transacciones
         df["CLASIFICACION"] = df.apply(
@@ -1018,18 +909,10 @@ usuario_actual = get_current_user()
 config_clasificadores = None
 
 if usuario_actual:
-    # Cargar base por defecto (si existe)
-    config_base_default = None
-    configs_disponibles = listar_configuraciones()
-    if configs_disponibles:
-        config_base_default = cargar_clasificadores(CONFIG_CLASIFICADORES)
-
     # Cargar clasificadores del usuario desde BD
     clasificadores_bd = obtener_clasificadores(usuario_actual.id)
     if clasificadores_bd:
-        config_bd_usuario = convertir_clasificadores_bd_a_dict(clasificadores_bd)
-        # IMPORTANTE: fusionar BD + base para no perder reglas históricas.
-        config_clasificadores = fusionar_configs_clasificadores(config_base_default, config_bd_usuario)
+        config_clasificadores = convertir_clasificadores_bd_a_dict(clasificadores_bd)
         st.sidebar.markdown(
             f'<div style="background-color: #d4edda; color: #155724; padding: 0.75rem; border-radius: 6px; margin: 0.5rem 0;">'
             f'✅ <strong>{len(clasificadores_bd)} clasificadores</strong> cargados desde BD'
@@ -1039,25 +922,11 @@ if usuario_actual:
     else:
         # Si no tiene clasificadores en BD, intentar cargar desde archivos (compatibilidad)
         st.sidebar.info("💡 No tienes clasificadores configurados. Usando configuración por defecto.")
-        config_clasificadores = config_base_default
+        configs_disponibles = listar_configuraciones()
+        if configs_disponibles:
+            config_clasificadores = cargar_clasificadores(CONFIG_CLASIFICADORES)
 else:
     st.sidebar.warning("⚠️ No se pudo obtener información del usuario")
-
-# Mantener el clasificador activo en session_state para permitir edición en UI
-if config_clasificadores is not None:
-    # Importante: conservar el clasificador editado en sesión entre reruns (ej: download button).
-    # Solo reinicializar cuando no exista o cuando cambie de usuario.
-    usuario_cfg_ss = st.session_state.get("config_clasificadores_usuario_id")
-    if (
-        "config_clasificadores" not in st.session_state
-        or st.session_state.get("config_clasificadores") is None
-        or usuario_cfg_ss != (usuario_actual.id if usuario_actual else None)
-    ):
-        st.session_state.config_clasificadores = config_clasificadores
-        st.session_state.config_clasificadores_usuario_id = usuario_actual.id if usuario_actual else None
-
-    # Usar siempre el config vigente de sesión para clasificar en esta ejecución.
-    config_clasificadores = st.session_state.config_clasificadores
 
 # ---------- OPCIÓN 1: CARGAR DESDE BASE DE DATOS ----------
 if usuario_actual:
@@ -1192,16 +1061,8 @@ if archivo_clasificadores and usuario_actual:
             
             if config_temp and config_temp.get("clasificadores"):
                 # Importar a BD
-                from database.crud import crear_clasificador, eliminar_clasificador
+                from database.crud import crear_clasificador
                 importados = 0
-                reemplazados = 0
-
-                # Reemplazo completo: desactivar clasificadores activos actuales del usuario
-                # para que el nuevo archivo importado sea la fuente principal.
-                clasificadores_actuales = obtener_clasificadores(usuario_actual.id)
-                for clf in clasificadores_actuales:
-                    if eliminar_clasificador(clf.id, usuario_actual.id):
-                        reemplazados += 1
                 
                 # Importar abonos
                 for clf in config_temp["clasificadores"].get("abonos", []):
@@ -1229,13 +1090,7 @@ if archivo_clasificadores and usuario_actual:
                     )
                     importados += 1
                 
-                st.sidebar.success(f"✅ {importados} clasificadores importados (reemplazados anteriores: {reemplazados})")
-                # Reset para que el próximo rerun recargue desde BD
-                if "config_clasificadores" in st.session_state:
-                    del st.session_state.config_clasificadores
-                if "config_clasificadores_usuario_id" in st.session_state:
-                    del st.session_state.config_clasificadores_usuario_id
-                st.session_state.reclasificar_en_vista = True
+                st.sidebar.success(f"✅ {importados} clasificadores importados")
                 st.rerun()
             else:
                 st.sidebar.error("❌ El archivo no tiene el formato correcto")
@@ -1277,17 +1132,7 @@ if config_clasificadores is not None and usuario_actual:
         try:
             # Si el DataFrame viene de BD, ya tiene CLASIFICACION
             # Si viene de archivo, necesita procesarse
-            viene_de_bd_en_vista = (
-                'archivo_id_cargado_bd' in st.session_state
-                and st.session_state.archivo_id_cargado_bd is not None
-                and not archivo_subido
-            )
-            force_reclasificar = (
-                st.session_state.get("config_clasificadores_editado", False)
-                or st.session_state.get("reclasificar_en_vista", False)
-                or viene_de_bd_en_vista
-            )
-            if force_reclasificar or "CLASIFICACION" not in df.columns:
+            if "CLASIFICACION" not in df.columns:
                 # Procesar datos si no están clasificados
                 if "DESCRIPCION" in df.columns:
                     df["DESCRIPCION"] = df["DESCRIPCION"].astype(str)
@@ -1301,10 +1146,6 @@ if config_clasificadores is not None and usuario_actual:
                         lambda row: clasificar_mejorado(row["COMENTARIO"], row["ABONOS (CLP)"], config_clasificadores), 
                         axis=1
                     )
-                
-                # Consumir el flag: ya estamos usando el clasificador actualizado
-                if force_reclasificar:
-                    st.session_state.config_clasificadores_editado = False
             
             # Guardar transacciones en BD (solo si no vienen de BD)
             # Verificar si los datos actuales vienen de BD usando el archivo_id
@@ -1363,306 +1204,18 @@ if config_clasificadores is not None and usuario_actual:
             # Verificar transacciones sin clasificar EN EL DATASET ACTUAL (no en BD)
             # Esto se ejecuta siempre, independientemente de si viene de BD o no
             if "CLASIFICACION" in df.columns:
-                if "mensaje_reclasificacion" in st.session_state:
-                    tipo_msg, texto_msg = st.session_state.pop("mensaje_reclasificacion")
-                    if tipo_msg == "warning":
-                        st.warning(texto_msg)
-                    else:
-                        st.success(texto_msg)
-
                 sin_clasificar_actual = df[df["CLASIFICACION"].isin([None, "NO CLASIFICADO", ""])]
                 if len(sin_clasificar_actual) > 0:
                     st.warning(f"⚠️ Hay {len(sin_clasificar_actual)} transacciones sin clasificar en este dataset")
-                    config_activo = st.session_state.get("config_clasificadores", config_clasificadores)
-                    if not config_activo:
-                        st.error("❌ No se encontró la configuración de clasificadores activa.")
-                    else:
-                        # Opciones del dropdown:
-                        # - Prioridad: categorías desde el config activo
-                        # - Respaldo: también incluimos categorías desde el config cargado desde BD (por si el session_state quedó incompleto)
-                        def _nombres_categorias(cfg):
-                            if not cfg:
-                                return []
-                            abonos_n = [
-                                c.get("nombre")
-                                for c in cfg.get("clasificadores", {}).get("abonos", [])
-                                if isinstance(c, dict) and c.get("nombre")
-                            ]
-                            cargos_n = [
-                                c.get("nombre")
-                                for c in cfg.get("clasificadores", {}).get("cargos", [])
-                                if isinstance(c, dict) and c.get("nombre")
-                            ]
-                            return abonos_n + cargos_n
-
-                        categorias_existentes = sorted(
-                            set(_nombres_categorias(config_activo) + _nombres_categorias(config_clasificadores))
-                        )
-                        # Respaldo final: si por algún motivo los configs no traen nombres,
-                        # levantar categorías activas directamente desde la BD del usuario.
-                        categorias_db = []
-                        if usuario_actual:
-                            try:
-                                clasificadores_db_fallback = obtener_clasificadores(usuario_actual.id)
-                                categorias_db = sorted(
-                                    set(
-                                        clf.nombre.strip()
-                                        for clf in clasificadores_db_fallback
-                                        if getattr(clf, "nombre", None) and str(clf.nombre).strip()
-                                    )
-                                )
-                            except Exception:
-                                categorias_db = []
-
-                        # Unión final con BD como fuente de verdad (evita quedar vacío si el config en memoria no trae nombres)
-                        categorias_existentes = sorted(set(categorias_existentes + categorias_db))
-
-                        # Respaldo adicional: categorías presentes en el dataset actual.
-                        # Esto garantiza que el dropdown tenga opciones incluso si falla la carga de config/BD.
-                        try:
-                            categorias_df = sorted(
-                                set(
-                                    str(c).strip()
-                                    for c in df["CLASIFICACION"].dropna().unique().tolist()
-                                    if str(c).strip() and str(c).strip() != "NO CLASIFICADO"
-                                )
-                            )
-                        except Exception:
-                            categorias_df = []
-
-                        categorias_existentes = sorted(set(categorias_existentes + categorias_df))
-                        opciones_categoria = ["-- Seleccionar --"] + categorias_existentes
-
-                        sin_clasificar_ui = sin_clasificar_actual.copy()
-                        sin_clasificar_ui["CATEGORIA"] = "-- Seleccionar --"
-                        sin_clasificar_ui["NUEVA_CATEGORIA"] = ""
-
-                        columnas_ui = []
-                        if "FECHA" in sin_clasificar_ui.columns:
-                            columnas_ui.append("FECHA")
-                        if "DESCRIPCION" in sin_clasificar_ui.columns:
-                            columnas_ui.append("DESCRIPCION")
-                        if "ABONOS (CLP)" in sin_clasificar_ui.columns:
-                            columnas_ui.append("ABONOS (CLP)")
-                        if "CARGOS (CLP)" in sin_clasificar_ui.columns:
-                            columnas_ui.append("CARGOS (CLP)")
-
-                        columnas_ui += ["CATEGORIA", "NUEVA_CATEGORIA"]
-
-                        with st.expander("🧩 Gestionar NO CLASIFICADO (editar en pantalla)"):
-                            st.caption("Selecciona una categoría existente o escribe una nueva. Luego se actualiza el JSON en memoria y se reclasifica la cartola.")
-                            muestra_ejemplo = categorias_existentes[:5]
-                            st.caption(f"Categorías disponibles: {len(categorias_existentes)} (ej: {', '.join(muestra_ejemplo) if muestra_ejemplo else 'N/A'})")
-                            opciones_categoria_filtradas = ["-- Seleccionar --"] + categorias_existentes
-                            
-                            # UI robusta: evitamos st.data_editor con SelectboxColumn (en algunos despliegues
-                            # no respeta options y queda vacío). En su lugar, usamos selectbox por fila.
-                            max_filas_ui = 50
-                            df_ui = sin_clasificar_ui.copy()
-                            if len(df_ui) > max_filas_ui:
-                                st.warning(f"Mostrando solo las primeras {max_filas_ui} filas para edición. Reduce el rango o vuelve a probar.")
-                                df_ui = df_ui.head(max_filas_ui)
-
-                            indices_ui = df_ui.index.tolist()
-                            st.dataframe(
-                                df_ui[columnas_ui].drop(columns=["CATEGORIA", "NUEVA_CATEGORIA"], errors="ignore"),
-                                use_container_width=True
-                            )
-
-                            categoria_masiva = st.selectbox(
-                                "Aplicar misma categoría a todas las filas visibles (opcional)",
-                                options=opciones_categoria_filtradas,
-                                index=0,
-                                key="categoria_masiva_no_clasif"
-                            )
-                            if categoria_masiva and categoria_masiva != "-- Seleccionar --":
-                                st.info(f"Se aplicará '{categoria_masiva}' a todas las filas visibles, salvo que escribas una categoría nueva en una fila específica.")
-
-                            st.markdown("**Asignación por fila**")
-                            for idx in indices_ui:
-                                r = df_ui.loc[idx]
-                                row_cols = st.columns([2, 6, 6])
-                                with row_cols[0]:
-                                    st.write(str(r.get("FECHA", ""))[:16])
-                                with row_cols[1]:
-                                    st.write(str(r.get("DESCRIPCION", ""))[:70])
-                                with row_cols[2]:
-                                    st.selectbox(
-                                        "Categoría",
-                                        options=opciones_categoria_filtradas,
-                                        index=0,
-                                        key=f"categoria_no_clasif_{idx}"
-                                    )
-                                    st.text_input(
-                                        "Nueva (opcional)",
-                                        value="",
-                                        key=f"nueva_categoria_no_clasif_{idx}",
-                                        placeholder="Ej: PROVEEDORES NACIONALES"
-                                    )
-
-                            if st.button("✅ Aplicar cambios y reclasificar", use_container_width=True):
-                                # Copia profunda para no mutar directamente el objeto usado por Streamlit
-                                config_nuevo = json.loads(json.dumps(config_activo))
-
-                                def _get_lista_objetivo(row_):
-                                    abono_val = float(row_.get("ABONOS (CLP)", 0) or 0)
-                                    return "abonos" if abono_val > 0 else "cargos"
-
-                                actualizados = 0
-                                errores = 0
-                                reglas_aprendidas = []
-
-                                # Índice de reglas por (lista_objetivo, nombre, tipo) para evitar duplicados en memoria
-                                indice_reglas = set()
-                                for lista_base in ["abonos", "cargos"]:
-                                    for regla in config_nuevo.get("clasificadores", {}).get(lista_base, []):
-                                        nombre_r = str(regla.get("nombre", "")).strip()
-                                        tipo_r = str(regla.get("tipo", "contiene_cualquiera")).strip()
-                                        if nombre_r:
-                                            indice_reglas.add((lista_base, nombre_r, tipo_r))
-
-                                for idx in indices_ui:
-                                    r = df_ui.loc[idx]
-                                    cat_sel = str(st.session_state.get(f"categoria_no_clasif_{idx}", "")).strip()
-                                    if (not cat_sel or cat_sel == "-- Seleccionar --") and categoria_masiva and categoria_masiva != "-- Seleccionar --":
-                                        cat_sel = categoria_masiva
-                                    cat_nueva = str(st.session_state.get(f"nueva_categoria_no_clasif_{idx}", "")).strip()
-                                    nombre_categoria = cat_nueva if cat_nueva else cat_sel
-
-                                    if not nombre_categoria or nombre_categoria == "-- Seleccionar --" or nombre_categoria == "NO CLASIFICADO":
-                                        errores += 1
-                                        continue
-
-                                    # "Detalle Movimiento" en esta app corresponde a "DESCRIPCION".
-                                    detalle = r.get("DESCRIPCION", "") if hasattr(r, "get") else ""
-                                    detalle_norm = normalizar(detalle)
-                                    if not detalle_norm:
-                                        errores += 1
-                                        continue
-
-                                    lista_objetivo = _get_lista_objetivo(r)
-                                    config_nuevo["clasificadores"].setdefault(lista_objetivo, [])
-                                    reglas = config_nuevo["clasificadores"][lista_objetivo]
-
-                                    # Regla de aprendizaje SIEMPRE como contiene_cualquiera para evitar conflictos
-                                    # con reglas existentes de tipo contiene_exacto.
-                                    key_regla_aprendida = (lista_objetivo, nombre_categoria, "contiene_cualquiera")
-                                    regla_aprendida = None
-                                    if key_regla_aprendida in indice_reglas:
-                                        regla_aprendida = next(
-                                            (
-                                                x for x in reglas
-                                                if x.get("nombre") == nombre_categoria and x.get("tipo", "contiene_cualquiera") == "contiene_cualquiera"
-                                            ),
-                                            None
-                                        )
-
-                                    if regla_aprendida is None:
-                                        reglas.append({
-                                            "nombre": nombre_categoria,
-                                            "palabras_clave": [detalle_norm],
-                                            "tipo": "contiene_cualquiera"
-                                        })
-                                        indice_reglas.add(key_regla_aprendida)
-                                    else:
-                                        palabras = regla_aprendida.get("palabras_clave", [])
-                                        if detalle_norm not in palabras:
-                                            palabras.append(detalle_norm)
-                                            regla_aprendida["palabras_clave"] = palabras
-
-                                    reglas_aprendidas.append((lista_objetivo, nombre_categoria, detalle_norm))
-
-                                    actualizados += 1
-
-                                st.session_state.config_clasificadores = config_nuevo
-                                # Flag para forzar reclasificación en el siguiente render (especialmente si df viene de BD)
-                                st.session_state.config_clasificadores_editado = True
-                                # Mantener reclasificación activa en esta vista para que un rerun
-                                # (ej: descargar JSON) no vuelva a mostrar CLASIFICACION antigua desde BD.
-                                st.session_state.reclasificar_en_vista = True
-                                # Reclasificar toda la cartola en pantalla
-                                df["CLASIFICACION"] = df.apply(
-                                    lambda row: clasificar_mejorado(
-                                        row.get("COMENTARIO", ""),
-                                        float(row.get("ABONOS (CLP)", 0) or 0),
-                                        st.session_state.config_clasificadores
-                                    ),
-                                    axis=1
-                                )
-                                # Mantener el flag para el siguiente rerun:
-                                # cuando el dataset viene desde BD, se recarga con CLASIFICACION antigua
-                                # y necesita forzar reclasificación una vez más en el siguiente ciclo.
-                                st.session_state.config_clasificadores_editado = True
-
-                                # Persistencia mínima en BD (opción A): guardar reglas aprendidas como clasificadores
-                                # para que estén disponibles al reingresar.
-                                persistidas_bd = 0
-                                if usuario_actual and reglas_aprendidas:
-                                    try:
-                                        from database.crud import crear_clasificador, obtener_clasificadores
-                                        existentes_bd = obtener_clasificadores(usuario_actual.id)
-                                        firmas_bd = set()
-                                        for clf in existentes_bd:
-                                            try:
-                                                tipo_txt = "abonos" if str(getattr(clf, "tipo", "")).lower().endswith("abono") else "cargos"
-                                                nombre_txt = str(getattr(clf, "nombre", "")).strip()
-                                                palabras_txt = json.loads(getattr(clf, "palabras_clave", "[]") or "[]")
-                                                for p in palabras_txt:
-                                                    firmas_bd.add((tipo_txt, nombre_txt, normalizar(p)))
-                                            except Exception:
-                                                continue
-
-                                        for lista_obj, nombre_cat, kw in reglas_aprendidas:
-                                            firma = (lista_obj, nombre_cat, kw)
-                                            if firma in firmas_bd:
-                                                continue
-                                            crear_clasificador(
-                                                usuario_id=usuario_actual.id,
-                                                nombre=nombre_cat,
-                                                tipo="abono" if lista_obj == "abonos" else "cargo",
-                                                palabras_clave=[kw],
-                                                tipo_coincidencia="contiene_cualquiera",
-                                                excluir=None,
-                                                orden=9999
-                                            )
-                                            firmas_bd.add(firma)
-                                            persistidas_bd += 1
-                                    except Exception:
-                                        pass
-
-                                restantes = len(df[df["CLASIFICACION"].isin([None, "NO CLASIFICADO", ""])])
-                                if errores > 0:
-                                    mensaje = f"Se aplicaron cambios con observaciones. Restantes sin clasificar: {restantes}."
-                                    st.session_state.mensaje_reclasificacion = ("warning", mensaje)
-                                else:
-                                    mensaje = f"✅ Cambios aplicados correctamente. Restantes sin clasificar: {restantes}."
-                                    st.session_state.mensaje_reclasificacion = ("success", mensaje)
-                                st.rerun()
-
-                        # Descarga siempre disponible (aun si aún no aplicaste cambios)
-                        json_actualizado = json.dumps(st.session_state.config_clasificadores, ensure_ascii=False, indent=2)
-                        st.download_button(
-                            "⬇️ Descargar clasificador actualizado (JSON)",
-                            data=json_actualizado,
-                            file_name="clasificadores_actualizado.json",
-                            mime="application/json",
-                            use_container_width=True
-                        )
+                    with st.expander("🔍 Ver transacciones sin clasificar"):
+                        columnas_mostrar = ["FECHA", "DESCRIPCION"]
+                        if "ABONOS (CLP)" in sin_clasificar_actual.columns:
+                            columnas_mostrar.append("ABONOS (CLP)")
+                        if "CARGOS (CLP)" in sin_clasificar_actual.columns:
+                            columnas_mostrar.append("CARGOS (CLP)")
+                        st.dataframe(sin_clasificar_actual[columnas_mostrar])
                 else:
                     st.success("✅ Todas las transacciones están clasificadas")
-                    if st.session_state.get("config_clasificadores") is not None:
-                        json_actualizado = json.dumps(
-                            st.session_state.config_clasificadores,
-                            ensure_ascii=False,
-                            indent=2
-                        )
-                        st.download_button(
-                            "⬇️ Descargar clasificador actualizado (JSON)",
-                            data=json_actualizado,
-                            file_name="clasificadores_actualizado.json",
-                            mime="application/json",
-                            use_container_width=True
-                        )
 
             # ---------- BARRA LATERAL DE FILTROS ----------
             st.sidebar.markdown("---")
@@ -1783,67 +1336,45 @@ if config_clasificadores is not None and usuario_actual:
             saldo_inicial = st.sidebar.number_input("Saldo inicial del periodo", value=0, key="saldo_inicial_input")
             saldo_calculado = saldo_inicial + total_abonos - total_cargos
 
-            # Saldo cartola al cierre: recorrer todos los movimientos en orden cronológico real.
-            # Misma fecha: muchas cartolas listan del más nuevo al más viejo (arriba el último movimiento
-            # del día). Ordenar por FECHA asc. y _ord_orig desc. para procesar ese día de temprano→tarde.
-            # Luego, si falta saldo en la última línea, se propaga: saldo + abonos − cargos.
+            # Tomar el saldo de la cartola
+            # IMPORTANTE: El saldo final es el ÚLTIMO saldo en el DataFrame (final del día)
+            # Esto funciona tanto si hay una sola fecha como múltiples fechas
             saldo_cartola = None
             diferencia = None
             fecha_saldo_cartola = None
             
             if "SALDO (CLP)" in df.columns and "FECHA" in df.columns:
-                dfc = df.copy()
-                if not pd.api.types.is_datetime64_any_dtype(dfc["FECHA"]):
-                    dfc["FECHA"] = pd.to_datetime(dfc["FECHA"], errors="coerce")
-                dfc = dfc[dfc["FECHA"].notna()]
-                if not dfc.empty:
-                    dfc["_ord_orig"] = dfc.index
-                    dfc = dfc.sort_values(
-                        by=["FECHA", "_ord_orig"],
-                        ascending=[True, False],
-                        na_position="last",
-                    )
-                    running = None
-                    last_fecha = None
-                    for _, row in dfc.iterrows():
-                        ab = pd.to_numeric(row.get("ABONOS (CLP)"), errors="coerce")
-                        cg = pd.to_numeric(row.get("CARGOS (CLP)"), errors="coerce")
-                        ab = float(ab) if pd.notna(ab) else 0.0
-                        cg = float(cg) if pd.notna(cg) else 0.0
-                        s = pd.to_numeric(row.get("SALDO (CLP)"), errors="coerce")
-                        last_fecha = row["FECHA"]
-                        if pd.notna(s):
-                            running = float(s)
-                        elif running is not None:
-                            running = running + ab - cg
-                        else:
-                            running = ab - cg
-                    if running is not None:
-                        saldo_cartola = float(running)
-                        fecha_saldo_cartola = last_fecha
-                        diferencia = saldo_calculado - saldo_cartola
+                # Filtrar solo filas con saldo no nulo
+                filas_con_saldo = df[df["SALDO (CLP)"].notna()].copy()
+                if not filas_con_saldo.empty:
+                    # Asegurar que FECHA esté en formato datetime
+                    if not pd.api.types.is_datetime64_any_dtype(filas_con_saldo["FECHA"]):
+                        filas_con_saldo["FECHA"] = pd.to_datetime(filas_con_saldo["FECHA"], errors='coerce')
+                    
+                    # Verificar si todas las fechas son iguales
+                    fechas_unicas = filas_con_saldo["FECHA"].nunique()
+                    
+                    if fechas_unicas == 1:
+                        # Si todas las fechas son iguales, tomar el ÚLTIMO saldo no nulo del DataFrame
+                        # (corresponde al final del día, última transacción)
+                        # Usar el índice original para mantener el orden de la cartola
+                        fila_saldo = filas_con_saldo.iloc[-1:]
+                    else:
+                        # Si hay múltiples fechas, ordenar por fecha ascendente y tomar la última (más reciente)
+                        filas_con_saldo = filas_con_saldo.sort_values(by="FECHA", ascending=True, na_position='last')
+                        fila_saldo = filas_con_saldo.iloc[-1:]
+                    
+                    saldo_cartola = float(fila_saldo["SALDO (CLP)"].values[0])
+                    fecha_saldo_cartola = fila_saldo["FECHA"].values[0]
+                    diferencia = saldo_calculado - saldo_cartola
 
             col4, col5 = st.columns(2)
             col4.metric("📌 Saldo Final Calculado", f"${saldo_calculado:,.0f}")
             if saldo_cartola is not None:
-                # Se comparte con Tab 2 para que "Saldo inicial caja (Tab 1)" replique este mismo valor.
-                st.session_state["saldo_tab1_actual"] = float(saldo_cartola)
                 col5.metric("🏦 Saldo según cartola", f"${saldo_cartola:,.0f}", delta=f"${diferencia:,.0f}")
                 st.caption(f"💡 Saldo cartola al {pd.to_datetime(fecha_saldo_cartola).strftime('%d-%m-%Y')}")
             else:
-                # Fallback: si el Excel/BD no trae SALDO (CLP), mostramos el saldo calculado para no dejar vacío.
-                # Indica que no se pudo leer el saldo directamente desde la cartola.
-                saldo_cartola = saldo_calculado
-                diferencia = 0
-                # Mantener consistencia entre tabs incluso cuando no exista saldo explícito en cartola.
-                st.session_state["saldo_tab1_actual"] = float(saldo_cartola)
-                if "FECHA" in df.columns and not df["FECHA"].empty:
-                    try:
-                        fecha_saldo_cartola = df["FECHA"].max()
-                    except:
-                        fecha_saldo_cartola = None
-                col5.metric("🏦 Saldo según cartola", f"${saldo_cartola:,.0f}", delta=f"${diferencia:,.0f}")
-                st.caption("💡 No se pudo leer el saldo final directamente desde la cartola; se mostró el saldo calculado.")
+                col5.warning("No se pudo leer saldo final de cartola.")
 
             # ---------- TABLA DETALLE ----------
             st.subheader("🔍 Detalle de transacciones clasificadas")
@@ -1886,9 +1417,8 @@ if config_clasificadores is not None and usuario_actual:
 else:
     st.error("❌ No se puede continuar sin la configuración de clasificadores.")
 
-# ── TAB 2: Proyección de Caja ──────────────────────────────────────
-# NOTA: Este bloque no modifica Tab 1. Solo agrega navegación por tabs.
-tab1, tab2 = st.tabs(["📊 Flujo Histórico", "🔮 Proyección de Caja"])
+# -- TAB 2: Proyeccion de Caja
+tab1, tab2 = st.tabs(["Flujo Historico", "Proyeccion de Caja"])
 with tab2:
     from proyeccion_caja import render_proyeccion
     render_proyeccion(usuario_actual)

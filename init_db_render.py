@@ -49,6 +49,11 @@ def main() -> None:
     try:
         Base.metadata.create_all(bind=engine)
         print("✅ Tablas creadas (si no existían).")
+        # create_all no agrega columnas nuevas a tablas ya existentes (p. ej. aporte empleador).
+        from database.crud_proyeccion import _ensure_proyeccion_remuneraciones_columns
+
+        _ensure_proyeccion_remuneraciones_columns()
+        print("✅ Columnas de remuneraciones verificadas.")
     except Exception as e:
         print(f"\n❌ ERROR al crear las tablas: {e}")
         import traceback

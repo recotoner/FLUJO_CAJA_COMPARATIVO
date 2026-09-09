@@ -22,7 +22,7 @@ if DATABASE_URL:
     # Render puede usar postgres:// que necesitamos convertir a postgresql://
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    
+
     # Configuración para PostgreSQL
     engine = create_engine(
         DATABASE_URL,
@@ -35,7 +35,7 @@ else:
     # SQLite para desarrollo local
     DATABASE_FILE = DB_DIR / "flujo_caja.db"
     DATABASE_URL = f"sqlite:///{DATABASE_FILE}"
-    
+
     engine = create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False},  # Necesario para SQLite con Streamlit
@@ -53,7 +53,7 @@ def get_db():
     """
     Obtiene una sesión de base de datos.
     Úsalo así:
-    
+
     db = next(get_db())
     # hacer operaciones
     db.close()
@@ -71,6 +71,9 @@ def init_db():
     """
     import database.models  # noqa: F401 — registra modelos en Base.metadata
     Base.metadata.create_all(bind=engine)
+    from database.crud_proyeccion import _ensure_proyeccion_remuneraciones_columns
+
+    _ensure_proyeccion_remuneraciones_columns()
     if os.getenv("DATABASE_URL"):
         print("Tablas creadas en PostgreSQL")
     else:

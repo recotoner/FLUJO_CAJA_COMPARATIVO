@@ -44,20 +44,57 @@ def _ensure_creditos_bancarios_table() -> None:
     ProyeccionCreditoBancario.__table__.create(bind=engine, checkfirst=True)
 
 
+def _sqlite_table_has_column(conn, table: str, column: str) -> bool:
+    rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+    # PRAGMA: (cid, name, type, notnull, dflt_value, pk)
+    return any(str(r[1]) == column for r in rows)
+
+
 def _ensure_proyeccion_remuneraciones_columns() -> None:
-    """Columnas nuevas en libro de remuneraciones (BD ya existente)."""
-    ddl = [
-        "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_impuesto_unico DECIMAL(15, 0)",
-        "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_salud_adicional DECIMAL(15, 0)",
-        "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_cesantia DECIMAL(15, 0)",
-        "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_aporte_empleador DECIMAL(15, 0)",
-    ]
-    with engine.begin() as conn:
-        for q in ddl:
-            try:
-                conn.exec_driver_sql(q)
-            except Exception:
-                pass
+    """
+    Garantiza columnas nuevas en proyeccion_remuneraciones antes de ORM.
+
+    Importante (PostgreSQL): no ejecutar varios ALTER en una sola transacción con
+    ``except: pass``. Si una columna ya existe, PG aborta la transacción y los
+    ALTER siguientes (p. ej. monto_aporte_empleador) no se aplican aunque el error
+    se silencie — exactamente el fallo productivo observado.
+    """
+    dialect = (engine.dialect.name or "").lower()
+    # (nombre, tipo_sqlite, tipo_postgres)
+    columns = (
+        ("monto_impuesto_unico", "DECIMAL(15, 0)", "NUMERIC(15, 0)"),
+        ("monto_salud_adicional", "DECIMAL(15, 0)", "NUMERIC(15, 0)"),
+        ("monto_cesantia", "DECIMAL(15, 0)", "NUMERIC(15, 0)"),
+        ("monto_aporte_empleador", "DECIMAL(15, 0)", "NUMERIC(15, 0)"),
+    )
+    for col_name, sqlite_type, pg_type in columns:
+        try:
+            # Una transacción por columna: evita que un fallo previo aborte el resto.
+            with engine.begin() as conn:
+                if dialect.startswith("postgres"):
+                    conn.exec_driver_sql(
+                        "ALTER TABLE proyeccion_remuneraciones "
+                        f"ADD COLUMN IF NOT EXISTS {col_name} {pg_type}"
+                    )
+                elif dialect == "sqlite":
+                    if _sqlite_table_has_column(conn, "proyeccion_remuneraciones", col_name):
+                        continue
+                    conn.exec_driver_sql(
+                        "ALTER TABLE proyeccion_remuneraciones "
+                        f"ADD COLUMN {col_name} {sqlite_type}"
+                    )
+                else:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE proyeccion_remuneraciones "
+                        f"ADD COLUMN IF NOT EXISTS {col_name} {sqlite_type}"
+                    )
+        except Exception as exc:
+            raise RuntimeError(
+                f"No se pudo asegurar la columna '{col_name}' en "
+                f"proyeccion_remuneraciones antes de cargar remuneraciones "
+                f"({dialect or 'db'}): {exc}. "
+                f"La carga se detuvo para evitar un INSERT inconsistente."
+            ) from exc
 
 
 def _ensure_parametros_usuario_columns() -> None:
@@ -608,6 +645,7 @@ def listar_proyeccion_remuneraciones_carga(carga_id: int) -> List[ProyeccionRemu
 
 
 def listar_proyeccion_remuneraciones_usuario(user_id: int) -> List[ProyeccionRemuneracion]:
+    _ensure_proyeccion_remuneraciones_columns()
     db = next(get_db())
     try:
         return (

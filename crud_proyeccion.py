@@ -50,6 +50,7 @@ def _ensure_proyeccion_remuneraciones_columns() -> None:
         "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_impuesto_unico DECIMAL(15, 0)",
         "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_salud_adicional DECIMAL(15, 0)",
         "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_cesantia DECIMAL(15, 0)",
+        "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_aporte_empleador DECIMAL(15, 0)",
     ]
     with engine.begin() as conn:
         for q in ddl:
@@ -515,6 +516,7 @@ def crear_proyeccion_remuneracion(
     monto_salud_adicional: Number = None,
     monto_cesantia: Number = None,
     monto_impuesto_unico: Number = None,
+    monto_aporte_empleador: Number = None,
     dia_pago: Optional[int] = None,
 ) -> ProyeccionRemuneracion:
     _ensure_proyeccion_remuneraciones_columns()
@@ -534,6 +536,7 @@ def crear_proyeccion_remuneracion(
             monto_salud_adicional=_dec(monto_salud_adicional),
             monto_cesantia=_dec(monto_cesantia),
             monto_impuesto_unico=_dec(monto_impuesto_unico),
+            monto_aporte_empleador=_dec(monto_aporte_empleador),
             dia_pago=dia_pago,
         )
         db.add(r)
@@ -565,6 +568,7 @@ def crear_proyeccion_remuneraciones_bulk(registros: Sequence[Dict[str, Any]]) ->
                 "monto_salud_adicional",
                 "monto_cesantia",
                 "monto_impuesto_unico",
+                "monto_aporte_empleador",
             ):
                 if key in copy:
                     copy[key] = _dec(copy[key])

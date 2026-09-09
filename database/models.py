@@ -15,7 +15,7 @@ import enum
 class Usuario(Base):
     """Información de cada cliente/usuario del sistema"""
     __tablename__ = "usuarios"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
@@ -23,7 +23,7 @@ class Usuario(Base):
     activo = Column(Boolean, default=True)
     fecha_registro = Column(DateTime, server_default=func.now())
     plan = Column(String(50), default="basico")  # 'basico', 'premium', etc.
-    
+
     # Relaciones (esto conecta con otras tablas)
     clasificadores = relationship("Clasificador", back_populates="usuario")
     archivos = relationship("ArchivoCargado", back_populates="usuario")
@@ -41,7 +41,7 @@ class TipoTransaccion(enum.Enum):
 class Clasificador(Base):
     """Reglas de clasificación que cada usuario configura"""
     __tablename__ = "clasificadores"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     nombre = Column(String(255), nullable=False)
@@ -51,7 +51,7 @@ class Clasificador(Base):
     excluir = Column(Text, nullable=True)  # JSON array como texto (opcional)
     activo = Column(Boolean, default=True)
     orden = Column(Integer, default=0)  # Orden de evaluación
-    
+
     # Relación
     usuario = relationship("Usuario", back_populates="clasificadores")
 
@@ -61,7 +61,7 @@ class Clasificador(Base):
 class MapeoColumnas(Base):
     """Configuración de cómo mapear columnas del Excel según el banco"""
     __tablename__ = "mapeo_columnas"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     banco = Column(String(100), nullable=False)
@@ -71,7 +71,7 @@ class MapeoColumnas(Base):
     columna_cargo = Column(String(100))
     columna_saldo = Column(String(100))
     activo = Column(Boolean, default=True)
-    
+
     # Relación
     usuario = relationship("Usuario", back_populates="mapeos")
 
@@ -81,7 +81,7 @@ class MapeoColumnas(Base):
 class ArchivoCargado(Base):
     """Registro de cada archivo que el usuario sube"""
     __tablename__ = "archivos_cargados"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     nombre_archivo = Column(String(255), nullable=False)
@@ -89,7 +89,7 @@ class ArchivoCargado(Base):
     banco = Column(String(100))
     total_registros = Column(Integer, default=0)
     estado = Column(String(50), default="procesado")  # 'procesado', 'error', 'pendiente'
-    
+
     # Relaciones
     usuario = relationship("Usuario", back_populates="archivos")
     transacciones = relationship("Transaccion", back_populates="archivo")
@@ -100,7 +100,7 @@ class ArchivoCargado(Base):
 class Transaccion(Base):
     """Cada movimiento bancario guardado"""
     __tablename__ = "transacciones"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     archivo_id = Column(Integer, ForeignKey("archivos_cargados.id"), nullable=True)
@@ -112,7 +112,7 @@ class Transaccion(Base):
     clasificacion = Column(String(255), index=True)
     comentario = Column(Text)  # Descripción normalizada
     fecha_registro = Column(DateTime, server_default=func.now())
-    
+
     # Relaciones
     usuario = relationship("Usuario", back_populates="transacciones")
     archivo = relationship("ArchivoCargado", back_populates="transacciones")
@@ -123,14 +123,14 @@ class Transaccion(Base):
 class Alerta(Base):
     """Alertas y notificaciones para el usuario"""
     __tablename__ = "alertas"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     tipo = Column(String(50), nullable=False)  # 'sin_clasificar', 'error_mapeo', etc.
     mensaje = Column(Text, nullable=False)
     fecha = Column(DateTime, server_default=func.now())
     leida = Column(Boolean, default=False)
-    
+
     # Relación
     usuario = relationship("Usuario", back_populates="alertas")
 
@@ -140,14 +140,14 @@ class Alerta(Base):
 class ArchivoProyeccion(Base):
     """Archivos de proyección guardados por el usuario"""
     __tablename__ = "archivos_proyeccion"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     nombre_archivo = Column(String(255), nullable=False)
     fecha_carga = Column(DateTime, server_default=func.now())
     contenido = Column(LargeBinary, nullable=False)  # Contenido del archivo Excel como bytes
     descripcion = Column(Text, nullable=True)  # Descripción opcional del usuario
-    
+
     # Relación
     usuario = relationship("Usuario")
 
@@ -240,6 +240,8 @@ class ProyeccionRemuneracion(Base):
     monto_salud_adicional = Column(DECIMAL(15, 0), nullable=True)
     monto_cesantia = Column(DECIMAL(15, 0), nullable=True)
     monto_impuesto_unico = Column(DECIMAL(15, 0), nullable=True)
+    # Aportes previsionales a cargo del empleador (Previred / mutual / SIS / etc.).
+    monto_aporte_empleador = Column(DECIMAL(15, 0), nullable=True)
     dia_pago = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 

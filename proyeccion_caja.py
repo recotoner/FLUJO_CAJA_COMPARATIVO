@@ -57,12 +57,17 @@ CONCEPTOS_ORDEN = [
     "📤 Retenciones 2da categoría",
     "📤 IVA Neto",
     "📤 PPM",
+    "📤 F29 total a pagar — código 91",
     "📤 Gastos Aduana/Flete",
     "📤 IVA Importación",
     "📤 Categoría personalizada (cliente)",
     "🏦 Saldo Cartola",
     "💰 Posición Neta Acum.",
 ]
+
+# En snapshots nuevos estas categorías no generan egresos (van dentro del F29 c.91).
+# Los registros históricos en BD / snapshots viejos no se borran.
+CODIGOS_EXCLUIDOS_POR_F29 = frozenset({"IVA", "PPM", "RETENCION", "IU_NOMINA"})
 
 # Comparativo: un solo concepto de caja típico como ingreso (resto = egresos / salidas).
 CONCEPTOS_INGRESO_COMPARATIVO = frozenset({"📥 CxC — Pago Clientes"})
@@ -97,6 +102,15 @@ def _primer_dia_mes_siguiente(fecha: date) -> date:
     """Primer día del mes calendario siguiente a `fecha` (útil para retenciones SII vs honorario mes previo)."""
     y, m = _next_month_year_month(fecha.year, fecha.month)
     return date(y, m, 1)
+
+
+def _fecha_pago_f29_desde_periodo(mes_periodo: date, dia_pago_impuestos: int) -> date:
+    """
+    Pago F29 código 91: mes calendario siguiente al período tributario + día SII.
+    Controla diciembre → enero del año siguiente.
+    """
+    y, m = _next_month_year_month(mes_periodo.year, mes_periodo.month)
+    return _fecha_con_dia(y, m, int(dia_pago_impuestos))
 
 
 def _iter_months_in_range(inicio: date, fin: date) -> Iterable[Tuple[int, int]]:
@@ -418,8 +432,9 @@ def _construir_lineas_snapshot(
     periodo_fin: date,
     cats: Mapping[str, int],
     slots_iva_ppm: set[Tuple[date, int]],
-) -> List[LineaEspecificacion]:
+) -> Tuple[List[LineaEspecificacion], List[str]]:
     lineas: List[LineaEspecificacion] = []
+    avisos: List[str] = []
 
     cxc_id = _ultima_carga_id(user_id, "cxc")
     cxp_id = _ultima_carga_id(user_id, "cxp")
@@ -511,106 +526,71 @@ def _construir_lineas_snapshot(
         par_rem = crud_p.obtener_o_crear_proyeccion_parametros_usuario(user_id)
         dia_rem_raw = par_rem.dia_pago_remuneraciones
         dia_imp_raw = par_rem.dia_pago_imposiciones
-        dia_trib_raw = par_rem.dia_pago_impuestos
         dia_rem_def = int(dia_rem_raw) if dia_rem_raw is not None else 30
         dia_imp_def = int(dia_imp_raw) if dia_imp_raw is not None else 10
-        dia_trib_def = int(dia_trib_raw) if dia_trib_raw is not None else 12
-        cid_ret = cats.get("RETENCION")
-        cid_iu_nom = cats.get("IU_NOMINA") or cid_ret
+        # Última carga vigente: el mes del libro es trazabilidad (base estimada), no la
+        # única fecha de proyección. Se replica 1 línea de líquido y 1 de imposiciones
+        # por cada mes del horizonte. Impuesto único no genera egreso ni se suma a F29.
+        from collections import defaultdict
+
+        por_periodo: Dict[Tuple[int, int], List[Any]] = defaultdict(list)
         for r in crud_p.listar_proyeccion_remuneraciones_carga(rem_id):
-            dbase = r.mes_aplicacion
-            dia_r = r.dia_pago or dia_rem_def
-            dia_i = dia_imp_def
-            fr = _fecha_pago_si_dia_paso_en_mes_actual(dbase, dia_r, periodo_inicio)
-            # Imposiciones (AFP/salud) de la nómina del mes `dbase`: día configurado del **mes siguiente**
-            # (evita quedar en marzo cuando el snapshot arranca en abril y nunca entra al rango).
-            fi = _fecha_dia_en_mes_siguiente_mes_ref(dbase, dia_i)
-            liq = _dec(r.monto_liquido)
-            if liq and periodo_inicio <= fr <= periodo_fin:
-                lineas.append(
-                    LineaEspecificacion(
-                        fr,
-                        cats["REMUNERACIONES"],
-                        f"Líquido {r.empleado or ''}".strip()[:200],
-                        -abs(liq),
-                        "real",
-                        "remuneraciones",
-                        r.id,
-                    )
+            if not r.mes_aplicacion:
+                continue
+            por_periodo[(r.mes_aplicacion.year, r.mes_aplicacion.month)].append(r)
+
+        if por_periodo:
+            src_y, src_m = max(por_periodo.keys())
+            rows_base = por_periodo[(src_y, src_m)]
+            dias_pago_filas = [int(r.dia_pago) for r in rows_base if r.dia_pago]
+            dia_r = dias_pago_filas[0] if dias_pago_filas else dia_rem_def
+
+            total_liq = Decimal(0)
+            total_cot_trab = Decimal(0)
+            total_aporte_emp = Decimal(0)
+            for r in rows_base:
+                total_liq += _dec(r.monto_liquido)
+                total_cot_trab += (
+                    _dec(r.monto_afp)
+                    + _dec(r.monto_salud)
+                    + _dec(getattr(r, "monto_salud_adicional", None))
+                    + _dec(getattr(r, "monto_cesantia", None))
                 )
-            afp = _dec(r.monto_afp)
-            sal = _dec(r.monto_salud)
-            sal_adic = _dec(getattr(r, "monto_salud_adicional", None))
-            ces = _dec(getattr(r, "monto_cesantia", None))
-            bruto_r = _dec(r.monto_bruto)
-            imp_u = _dec(getattr(r, "monto_impuesto_unico", None))
-            # Imposiciones Previred = suma columnas del libro (AFP + salud + adicional salud + cesantía).
-            afp_sal = afp + sal + sal_adic + ces
-            total_desc_est = (
-                (bruto_r - liq) if bruto_r > 0 and liq > 0 and bruto_r > liq else Decimal(0)
-            )
-            # Columna IU del Excel a veces trae *todos* los descuentos (AFP/salud + IU). Si casi iguala
-            # haber−líquido, no fuerza una segunda línea el día F29 ni deja imposiciones en cero.
-            tol = max(Decimal("1"), (total_desc_est * Decimal("0.005")) if total_desc_est else Decimal(1))
-            descuentos_solo_en_iu = (
-                afp_sal <= 0
-                and total_desc_est > 0
-                and imp_u > 0
-                and abs(imp_u - total_desc_est) <= tol
+                total_aporte_emp += _dec(getattr(r, "monto_aporte_empleador", None))
+            total_impos = total_cot_trab + total_aporte_emp
+            fuente = f"{src_y}-{src_m:02d}"
+            avisos.append(
+                f"Remuneraciones/imposiciones: período fuente {fuente} de la última carga "
+                f"se usa como base estimada para cada mes del horizonte."
             )
 
-            base_prev = Decimal(0)
-            imp_u_linea = imp_u
-            if descuentos_solo_en_iu:
-                base_prev = total_desc_est
-                imp_u_linea = Decimal(0)
-            elif afp_sal > 0:
-                base_prev = afp_sal
-            elif bruto_r > 0 and liq > 0 and bruto_r > liq:
-                if imp_u > 0:
-                    base_prev = bruto_r - liq - imp_u
-                else:
-                    base_prev = bruto_r - liq
-            if base_prev < 0:
-                base_prev = Decimal(0)
+            for y, m in _iter_months_in_range(periodo_inicio, periodo_fin):
+                fr = _fecha_con_dia(y, m, dia_r)
+                fi = _fecha_con_dia(y, m, dia_imp_def)
 
-            if base_prev and periodo_inicio <= fi <= periodo_fin:
-                tc_prev = "real" if afp_sal > 0 else "estimado"
-                if descuentos_solo_en_iu:
-                    desc_prev = (
-                        f"Impos. (desc. totales en col. IU — ideal AFP/salud/IU separados) "
-                        f"{r.empleado or ''}"
-                    ).strip()[:200]
-                elif afp_sal > 0:
-                    desc_prev = f"Impos. (AFP+salud+adic.+ces.) {r.empleado or ''}".strip()[:200]
-                elif imp_u > 0:
-                    desc_prev = f"Impos. y cotiz. (est. haber−líq.−IU) {r.empleado or ''}".strip()[:200]
-                else:
-                    desc_prev = f"Impos. y desc. (est. haber−líq.) {r.empleado or ''}".strip()[:200]
-                lineas.append(
-                    LineaEspecificacion(
-                        fi,
-                        cats["IMPOSICIONES"],
-                        desc_prev,
-                        -abs(base_prev),
-                        tc_prev,
-                        "remuneraciones",
-                        r.id,
-                    )
-                )
-
-            if imp_u_linea > 0 and cid_iu_nom:
-                f_trib = _fecha_dia_en_mes_siguiente_mes_ref(dbase, dia_trib_def)
-                if periodo_inicio <= f_trib <= periodo_fin:
+                if total_liq and periodo_inicio <= fr <= periodo_fin:
                     lineas.append(
                         LineaEspecificacion(
-                            f_trib,
-                            cid_iu_nom,
-                            f"Impuesto único nómina {r.empleado or ''}".strip()[:200],
-                            -abs(imp_u_linea),
-                            "real",
+                            fr,
+                            cats["REMUNERACIONES"],
+                            f"Remuneraciones líquidas {y}-{m:02d} (base est. {fuente})",
+                            -abs(total_liq),
+                            "estimado",
                             "remuneraciones",
-                            r.id,
+                            None,
+                        )
+                    )
+
+                if total_impos and periodo_inicio <= fi <= periodo_fin:
+                    lineas.append(
+                        LineaEspecificacion(
+                            fi,
+                            cats["IMPOSICIONES"],
+                            f"Imposiciones AFP/Salud {y}-{m:02d} (base est. {fuente})",
+                            -abs(total_impos),
+                            "estimado",
+                            "remuneraciones",
+                            None,
                         )
                     )
 
@@ -619,12 +599,42 @@ def _construir_lineas_snapshot(
     for c in crud_p.listar_categorias_financieras():
         id_a_codigo[c.id] = c.codigo
 
+    dia_imp = int(params.dia_pago_impuestos) if params and params.dia_pago_impuestos is not None else 12
+    f29_periodos_cubiertos: set[Tuple[int, int]] = set()
+
     for e in egresos:
         cod = id_a_codigo.get(e.categoria_id, "")
+        if cod in CODIGOS_EXCLUIDOS_POR_F29:
+            # Históricos IVA/PPM/RETENCION (e IU vía otra vía) no entran a snapshots nuevos.
+            continue
+
         m_est = _dec(e.monto_estimado)
         if m_est == 0:
             continue
         dia_e = e.dia_pago or 12
+
+        # F29_91: mes_aplicacion = período tributario; pago = mes siguiente + dia_pago_impuestos.
+        if cod == "F29_91":
+            if e.es_recurrente:
+                continue
+            if not e.mes_aplicacion:
+                continue
+            ma = e.mes_aplicacion
+            fd = _fecha_pago_f29_desde_periodo(ma, dia_imp)
+            f29_periodos_cubiertos.add((ma.year, ma.month))
+            if periodo_inicio <= fd <= periodo_fin:
+                lineas.append(
+                    LineaEspecificacion(
+                        fd,
+                        e.categoria_id,
+                        "F29 total a pagar — código 91",
+                        -abs(m_est),
+                        "manual",
+                        "parametrico",
+                        e.id,
+                    )
+                )
+            continue
 
         if e.es_recurrente:
             for y, m in _iter_months_in_range(periodo_inicio, periodo_fin):
@@ -641,10 +651,6 @@ def _construir_lineas_snapshot(
                             e.id,
                         )
                     )
-                    if e.categoria_id == cats["IVA"]:
-                        _ocupar_slot_iva_ppm(slots_iva_ppm, fd, cats["IVA"])
-                    elif e.categoria_id == cats["PPM"]:
-                        _ocupar_slot_iva_ppm(slots_iva_ppm, fd, cats["PPM"])
         else:
             if e.mes_aplicacion:
                 ma = e.mes_aplicacion
@@ -661,10 +667,6 @@ def _construir_lineas_snapshot(
                             e.id,
                         )
                     )
-                    if e.categoria_id == cats["IVA"]:
-                        _ocupar_slot_iva_ppm(slots_iva_ppm, fd, cats["IVA"])
-                    elif e.categoria_id == cats["PPM"]:
-                        _ocupar_slot_iva_ppm(slots_iva_ppm, fd, cats["PPM"])
 
     # Créditos/pasivos bancarios parametrizados por usuario.
     cid_credito = cats.get("CREDITO_BANCARIO")
@@ -850,53 +852,28 @@ def _construir_lineas_snapshot(
                 )
                 fd = fd + timedelta(days=1)
 
-    dia_imp = int(params.dia_pago_impuestos) if params else 12
-    tasa_ppm = _dec(params.tasa_ppm) if params and params.tasa_ppm is not None else Decimal(0)
-
-    todas_facturas_cxc = facturas_cxc
-
+    # Advertencias F29: solo pagos futuros (>= hoy) dentro del horizonte del snapshot.
+    # No alertar períodos históricos; consolidar faltantes en un solo aviso.
+    hoy = date.today()
+    f29_faltantes: List[Tuple[Tuple[int, int], date]] = []
     for y, m in _iter_months_in_range(periodo_inicio, periodo_fin):
         fd = _fecha_con_dia(y, m, dia_imp)
+        if fd < hoy:
+            continue
         if fd < periodo_inicio or fd > periodo_fin:
             continue
         py, pm = _prev_month(y, m)
-        suma_net_cxc = _suma_neto_facturas_mes(todas_facturas_cxc, "por_cobrar", py, pm)
-        suma_net_cxp = _suma_neto_facturas_mes(list(facturas_cxp), "por_pagar", py, pm)
+        if (py, pm) not in f29_periodos_cubiertos:
+            f29_faltantes.append(((py, pm), fd))
 
-        if not _slot_iva_ppm_ocupado(slots_iva_ppm, fd, cats["IVA"]):
-            iva_heur = suma_net_cxc * Decimal("0.19") - suma_net_cxp * Decimal("0.19")
-            if iva_heur != 0:
-                lineas.append(
-                    LineaEspecificacion(
-                        fd,
-                        cats["IVA"],
-                        "IVA neto estimado (19% × neto CxC mes ant. − 19% × neto CxP mes ant.)",
-                        -iva_heur,
-                        "estimado",
-                        "parametrico",
-                        None,
-                    )
-                )
-                _ocupar_slot_iva_ppm(slots_iva_ppm, fd, cats["IVA"])
+    if f29_faltantes:
+        periodos_txt = ", ".join(f"{py}-{pm:02d}" for (py, pm), _ in f29_faltantes)
+        avisos.append(
+            f"Falta F29 código 91 para período(s) tributario(s) {periodos_txt} "
+            f"(pago futuro dentro del horizonte). No se estima automáticamente."
+        )
 
-        # PPM: solo tasa definida por el cliente en proyeccion_parametros_usuario (sin tasa fija en código).
-        if tasa_ppm > 0 and not _slot_iva_ppm_ocupado(slots_iva_ppm, fd, cats["PPM"]):
-            ppm_m = suma_net_cxc * tasa_ppm
-            if ppm_m > 0:
-                lineas.append(
-                    LineaEspecificacion(
-                        fd,
-                        cats["PPM"],
-                        "PPM estimado (tasa cliente × neto CxC venc. mes ant.)",
-                        -ppm_m,
-                        "estimado",
-                        "parametrico",
-                        None,
-                    )
-                )
-                _ocupar_slot_iva_ppm(slots_iva_ppm, fd, cats["PPM"])
-
-    return lineas
+    return lineas, avisos
 
 
 def generar_snapshot(
@@ -904,13 +881,13 @@ def generar_snapshot(
     periodo_dias: int,
     etiqueta: Optional[str] = None,
     notas: Optional[str] = None,
-) -> ProyeccionSnapshot:
+) -> Tuple[ProyeccionSnapshot, List[str]]:
     """
     Lee últimas cargas CxC, CxP y remuneraciones; importaciones activas; egresos paramétricos;
-    IVA mensual automático: 19% × suma(monto_neto CxC mes ant.) − 19% × suma(monto_neto CxP mes ant.),
-    con neto estimado como monto_total/1.19 si monto_neto es nulo.
-    PPM: solo si el usuario tiene ``tasa_ppm`` en BD; monto = tasa cliente × base neto CxC mes anterior (sin tasa hardcodeada).
+    F29 código 91 manual (período tributario → pago mes siguiente + dia_pago_impuestos).
+    No genera egresos separados de IVA, PPM, RETENCION ni IU_NOMINA (van en F29 c.91).
     IVA importaciones: si no hay ``fecha_impacto_iva``, se usa día 12 del mes **siguiente** a la ETA.
+    Retorna ``(snapshot, avisos)``; avisos incluye períodos F29 faltantes en el horizonte.
     """
     if periodo_dias not in (30, 60, 90):
         periodo_dias = min(max(30, periodo_dias), 90)
@@ -955,7 +932,7 @@ def generar_snapshot(
         )
 
     slots_iva_ppm: set[Tuple[date, int]] = set()
-    especs = _construir_lineas_snapshot(user_id, periodo_inicio, periodo_fin, cats, slots_iva_ppm)
+    especs, avisos = _construir_lineas_snapshot(user_id, periodo_inicio, periodo_fin, cats, slots_iva_ppm)
 
     snap = crud_p.crear_proyeccion_snapshot(
         user_id,
@@ -983,7 +960,7 @@ def generar_snapshot(
     if bulk:
         crud_p.crear_proyeccion_lineas_bulk(bulk)
 
-    return crud_p.obtener_proyeccion_snapshot(snap.id)
+    return crud_p.obtener_proyeccion_snapshot(snap.id), avisos
 
 
 def _agregacion_diaria_waterfall(
@@ -1600,64 +1577,33 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
                     st.success(f"Importación {imp_sel.id} actualizada.")
                     st.rerun()
 
-    with st.expander("Honorarios y Retenciones (2da categoría)", expanded=False):
+    with st.expander("Honorarios líquidos", expanded=False):
         st.caption(
-            "Registra pagos de honorarios líquidos y su retención asociada para alimentar los conceptos "
-            "`📤 Honorarios líquidos` y `📤 Retenciones 2da categoría`. "
-            "El **impuesto único del libro de remuneraciones** se mapea desde el Excel y va a «Impuesto único nómina» "
-            "con el día **pago impuestos (IVA/SII)** de parámetros (junto a IVA/PPM)."
+            "Registra pagos de **honorarios líquidos** (`📤 Honorarios líquidos`). "
+            "Las retenciones de 2da categoría **ya no se proyectan como egreso separado**: "
+            "deben incluirse en el **F29 código 91** (parámetros fiscales). "
+            "El impuesto único de nómina tampoco se proyecta aparte (va en el mismo F29)."
         )
         cat_h = crud_p.obtener_categoria_por_codigo("HONORARIOS")
-        cat_r = crud_p.obtener_categoria_por_codigo("RETENCION")
-        if not cat_h or not cat_r:
-            st.error("No se encontraron categorías HONORARIOS/RETENCION en `categorias_financieras`.")
+        if not cat_h:
+            st.error("No se encontró la categoría HONORARIOS en `categorias_financieras`.")
         else:
-            params = crud_p.obtener_o_crear_proyeccion_parametros_usuario(user_id)
-            tasa_ret_default = float(_dec(params.tasa_retencion_honorarios)) if params.tasa_retencion_honorarios is not None else 0.1075
-
             with st.form("form_honorarios_retenciones"):
-                h1, h2 = st.columns(2)
-                with h1:
-                    desc_h = st.text_input("Descripción honorario", value="Honorarios profesionales")
-                    monto_h = st.number_input("Monto honorario líquido", min_value=0.0, step=1000.0, value=0.0)
-                    fecha_h = st.date_input(
-                        "Mes del honorario (referencia)",
-                        value=date.today(),
-                        key="dt_honorario_pago",
-                        help="Define el **mes** del período. El pago del líquido puede ser fin de mes o el día exacto (opción al lado).",
-                    )
-                    honorario_fin_mes = st.checkbox(
-                        "Honorario líquido: pago el último día del mes",
-                        value=True,
-                        key="chk_hr_hon_fin_mes",
-                        help="Proyecta el egreso de honorarios el **último día calendario** del mes de la referencia (p. ej. marzo → 31).",
-                    )
-                with h2:
-                    ret_mismo_dia_trib = st.checkbox(
-                        "Retención: mismo día que IVA/PPM (parámetros), mes siguiente al honorario",
-                        value=True,
-                        key="chk_hr_ret_trib_sii",
-                        help=f"Usa el día **Día pago impuestos (IVA/SII)** de parámetros (actual: {int(params.dia_pago_impuestos or 12)}) "
-                        "y el **mes siguiente** al mes del honorario. No reutiliza el día del honorario.",
-                    )
-                    auto_ret = st.checkbox("Calcular retención automáticamente", value=True, key="chk_hr_ret_auto")
-                    tasa_ret_pct = st.number_input(
-                        "Tasa retención (%)",
-                        min_value=0.0,
-                        max_value=30.0,
-                        step=0.01,
-                        value=round(tasa_ret_default * 100, 4),
-                        format="%.4f",
-                        key="num_hr_tasa_ret",
-                    )
-                    monto_ret_manual = st.number_input(
-                        "Retención manual (si no auto)",
-                        min_value=0.0,
-                        step=1000.0,
-                        value=0.0,
-                        key="num_hr_ret_manual",
-                    )
-                guardar_hr = st.form_submit_button("Guardar honorario/retención", type="primary")
+                desc_h = st.text_input("Descripción honorario", value="Honorarios profesionales")
+                monto_h = st.number_input("Monto honorario líquido", min_value=0.0, step=1000.0, value=0.0)
+                fecha_h = st.date_input(
+                    "Mes del honorario (referencia)",
+                    value=date.today(),
+                    key="dt_honorario_pago",
+                    help="Define el **mes** del período. El pago del líquido puede ser fin de mes o el día exacto (opción abajo).",
+                )
+                honorario_fin_mes = st.checkbox(
+                    "Honorario líquido: pago el último día del mes",
+                    value=True,
+                    key="chk_hr_hon_fin_mes",
+                    help="Proyecta el egreso de honorarios el **último día calendario** del mes de la referencia (p. ej. marzo → 31).",
+                )
+                guardar_hr = st.form_submit_button("Guardar honorario líquido", type="primary")
 
                 if guardar_hr:
                     if monto_h <= 0:
@@ -1677,41 +1623,19 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
                             mes_aplicacion=mes_app,
                             es_recurrente=False,
                         )
-                        if auto_ret:
-                            monto_ret = round(monto_h * (tasa_ret_pct / 100.0), 2)
-                        else:
-                            monto_ret = monto_ret_manual
-                        if monto_ret > 0:
-                            dia_trib = int(params.dia_pago_impuestos or 12)
-                            if ret_mismo_dia_trib:
-                                mes_app_ret = _primer_dia_mes_siguiente(mes_app)
-                                dia_ret = dia_trib
-                            else:
-                                mes_app_ret = mes_app
-                                dia_ret = fecha_h.day
-                            crud_p.crear_proyeccion_egreso_parametrico(
-                                user_id=user_id,
-                                categoria_id=cat_r.id,
-                                descripcion=f"Retención 2da categoría ({desc_h or 'honorario'})",
-                                monto_estimado=monto_ret,
-                                dia_pago=dia_ret,
-                                mes_aplicacion=mes_app_ret,
-                                es_recurrente=False,
-                            )
-                        if monto_ret > 0:
-                            st.success(
-                                f"Guardado: honorario día {dia_hon} ({mes_app.year}-{mes_app.month:02d}) · "
-                                f"retención día {dia_ret} ({mes_app_ret.year}-{mes_app_ret.month:02d}, alineada a IVA/PPM)."
-                            )
-                        else:
-                            st.success(
-                                f"Honorario guardado (día {dia_hon}, mes {mes_app.year}-{mes_app.month:02d})."
-                            )
+                        st.success(
+                            f"Honorario líquido guardado (día {dia_hon}, mes {mes_app.year}-{mes_app.month:02d}). "
+                            "La retención tributaria debe ir en F29 código 91."
+                        )
                         st.rerun()
 
-            # Vista de últimos registros de honorarios/retenciones
+            # Vista de últimos registros de honorarios (líquidos). Históricos RETENCION se listan
+            # solo para consulta/eliminación manual; no entran a snapshots nuevos.
+            cat_r = crud_p.obtener_categoria_por_codigo("RETENCION")
             eg = crud_p.listar_proyeccion_egresos_parametricos(user_id)
-            target_ids = {cat_h.id, cat_r.id}
+            target_ids = {cat_h.id}
+            if cat_r:
+                target_ids.add(cat_r.id)
             rows_hr = []
             for e in eg:
                 if e.categoria_id not in target_ids:
@@ -1739,8 +1663,8 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
                     hide_index=True,
                 )
                 st.caption(
-                    "La retención debe mostrar mes_aplicación posterior al honorario y día_pago igual al IVA/PPM. "
-                    "Si no, eliminá y volvé a guardar."
+                    "Solo los honorarios líquidos se proyectan. Filas RETENCION históricas "
+                    "permanecen en BD pero se excluyen de nuevas proyecciones (usar F29 c.91)."
                 )
                 by_hr_id: Dict[int, Dict[str, Any]] = {int(r["id"]): r for r in rows_hr}
                 oid_pick = sorted(by_hr_id.keys(), reverse=True)
@@ -1968,7 +1892,12 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
             key="up_rem",
             label_visibility="collapsed",
         )
-        mes_def = st.date_input("Mes aplicación (si el Excel no trae periodo)", value=date.today().replace(day=1), key="mes_rem")
+        mes_def = st.date_input(
+            "Mes aplicación (fallback si el Excel no trae periodo)",
+            value=date.today().replace(day=1),
+            key="mes_rem",
+            help="Solo se usa si el libro no trae el período en el encabezado (p. ej. «Julio de 2026»).",
+        )
         if up_rem and st.button("Procesar remuneraciones", key="btn_rem"):
             try:
                 data = up_rem.getvalue()
@@ -1977,8 +1906,17 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
                     data,
                     up_rem.name,
                     mes_aplicacion_default=mes_def,
+                    preset_columnas="dag",
                 )
-                st.success(f"Guardadas {r.filas_guardadas} filas (carga #{r.carga_id}).")
+                st.success(
+                    f"Guardadas {r.filas_guardadas} filas válidas (carga #{r.carga_id})"
+                    + (
+                        f" · período {r.mes_aplicacion_usado.strftime('%Y-%m')}"
+                        if r.mes_aplicacion_usado
+                        else ""
+                    )
+                    + "."
+                )
                 if r.advertencias:
                     with st.expander("Advertencias parser"):
                         for a in r.advertencias[:50]:
@@ -2129,12 +2067,21 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
         st.markdown("</div>", unsafe_allow_html=True)
     if generar_click:
         try:
-            snap = generar_snapshot(user_id, psel, etiqueta=etiqueta or None, notas=notas or None)
-            st.success(f"Proyección guardada v{snap.version} creada (id {snap.id}).")
+            snap, avisos_f29 = generar_snapshot(user_id, psel, etiqueta=etiqueta or None, notas=notas or None)
             st.session_state["ultimo_snapshot_proy"] = snap.id
+            st.session_state["avisos_f29_ultimos"] = list(avisos_f29 or [])
+            st.session_state["msg_ok_proyeccion"] = (
+                f"Proyección guardada v{snap.version} creada (id {snap.id})."
+            )
             st.rerun()
         except Exception as ex:
             st.error(str(ex))
+
+    msg_ok = st.session_state.pop("msg_ok_proyeccion", None)
+    if msg_ok:
+        st.success(msg_ok)
+    for aviso in st.session_state.pop("avisos_f29_ultimos", []) or []:
+        st.warning(aviso)
 
     snaps = crud_p.listar_proyeccion_snapshots(user_id, limite=80)
     if not snaps:
@@ -2507,6 +2454,8 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
                 return "📤 IVA Neto"
             if cod == "PPM":
                 return "📤 PPM"
+            if cod == "F29_91":
+                return "📤 F29 total a pagar — código 91"
             if cod == "GASTOS_IMPORTACION":
                 return "📤 Gastos Aduana/Flete"
             if cod == "IVA_IMPORTACION":

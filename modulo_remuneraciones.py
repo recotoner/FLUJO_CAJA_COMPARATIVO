@@ -27,6 +27,8 @@ def _norm_text(s: str) -> str:
 
 
 _ALIAS_EMPLEADO = (
+    "nombre trabajador",
+    "nombre del trabajador",
     "nombre",
     "empleado",
     "trabajador",
@@ -47,6 +49,60 @@ _ALIAS_EMPLEADO = (
     "sujeto",
 )
 
+# Columnas de aportes a cargo del empleador (se suman en monto_aporte_empleador).
+# No usar alias cortos ambiguos (p. ej. «sis» ⊂ «inasist»).
+_ALIAS_APORTE_EMPLEADOR = (
+    "aporte empl a cta indiv",
+    "aporte empl. a cta. indiv.",
+    "aporte empleador a cta indiv",
+    "aporte empleador cuenta individual",
+    "aporte trab pesado",
+    "aporte trab. pesado",
+    "s.c. empleador",
+    "sc empleador",
+    "s c empleador",
+    "seguro cesantia empleador",
+    "aporte mutual",
+    "s.i.s.",
+    "s.i.s",
+    "comp. exp. vida",
+    "comp exp vida",
+    "cot. rentabilidad protegida",
+    "cot rentabilidad protegida",
+    "aporte sustit",
+    "aporte sustit.",
+    "cot. expecta. vida sue. empre.",
+    "cot expecta vida sue empre",
+    "rent. protegida sue. empre.",
+    "rent protegida sue empre",
+)
+
+
+_EXCLUIR_APORTE_EMPLEADOR = (
+    "inasist",
+    "atraso",
+    "gratif",
+    "bono",
+    "semana corrida",
+    "horas extra",
+    "colacion",
+    "moviliz",
+    "prestamo",
+    "anticipo",
+    "sobregiro",
+    "voluntaria",
+    "ahorro",
+    "apv",
+    "afil",
+    "alcance",
+    "haberes",
+    "imponible",
+    "sueldo",
+    "nombre",
+    "cargo",
+    "dias trabaj",
+)
+
 _ALIAS_RUT = (
     "rut",
     "rut empleado",
@@ -59,6 +115,8 @@ _ALIAS_RUT = (
 )
 
 _ALIAS_LIQUIDO = (
+    "alcance liquido",
+    "alcance líquido",
     "liquido",
     "líquido",
     "liquido a pago",
@@ -97,17 +155,40 @@ _ALIAS_BRUTO = (
 )
 
 MAPEO_REM_PRESETS: Dict[str, Dict[str, Sequence[str]]] = {
+    "dag": {
+        "empleado": ("nombre trabajador", "nombre del trabajador", "trabajador", "nombre"),
+        "rut_empleado": ("rut", "rut trabajador", "rut empleado"),
+        "monto_liquido": ("alcance liquido", "alcance líquido", "liquido a pago", "liquido"),
+        "monto_bruto": ("total haberes", "haberes", "total haber", "bruto"),
+        "monto_imponible": ("total imponibles", "imponible", "total imponible", "renta imponible"),
+        "monto_afp": ("cotiza. a.f.p.", "cotiza afp", "cotizacion afp", "afp"),
+        "monto_salud_adicional": ("adic. isapre", "adicional isapre", "adicional salud", "adic isapre"),
+        "monto_cesantia": ("seg. desempleo", "seguro desempleo", "seguro cesantia", "cesantia"),
+        "monto_salud": ("cotiza. salud", "cotiza salud", "cotizacion salud", "salud"),
+        "monto_impuesto_unico": (
+            "imp. a la renta",
+            "impuesto a la renta",
+            "impuesto unico",
+            "impuesto único",
+            "imp. unico",
+        ),
+        "monto_aporte_empleador": _ALIAS_APORTE_EMPLEADOR,
+        "mes_aplicacion": ("mes", "periodo", "mes remuneracion"),
+        "dia_pago": ("dia pago", "día pago"),
+    },
     "planilla_cl": {
         "empleado": _ALIAS_EMPLEADO,
         "rut_empleado": _ALIAS_RUT,
         "monto_liquido": _ALIAS_LIQUIDO,
         "monto_bruto": _ALIAS_BRUTO,
-        "monto_imponible": ("imponible", "base imponible", "total imponible", "renta imponible"),
+        "monto_imponible": ("imponible", "base imponible", "total imponible", "renta imponible", "total imponibles"),
         "monto_afp": (
             "afp",
             "cot afp",
             "cotizacion afp",
             "cotización afp",
+            "cotiza. a.f.p.",
+            "cotiza afp",
             "cotizacion obligatoria",
             "prevision",
             "previsión",
@@ -118,6 +199,8 @@ MAPEO_REM_PRESETS: Dict[str, Dict[str, Sequence[str]]] = {
             "adicional salud",
             "adicional de salud",
             "salud adicional",
+            "adic. isapre",
+            "adic isapre",
             "cot adicional salud",
             "cotización adicional salud",
             "cotizacion adicional salud",
@@ -130,6 +213,8 @@ MAPEO_REM_PRESETS: Dict[str, Dict[str, Sequence[str]]] = {
         "monto_cesantia": (
             "seguro cesantia",
             "seguro cesantía",
+            "seg. desempleo",
+            "seguro desempleo",
             "s. cesantia",
             "s. cesantía",
             "seguro de cesantia",
@@ -145,11 +230,15 @@ MAPEO_REM_PRESETS: Dict[str, Dict[str, Sequence[str]]] = {
             "fonasa",
             "isapre",
             "cot salud",
+            "cotiza. salud",
+            "cotiza salud",
             "cotizacion salud",
             "cotización de salud",
             "c. salud",
         ),
         "monto_impuesto_unico": (
+            "imp. a la renta",
+            "impuesto a la renta",
             "impuesto unico",
             "impuesto único",
             "impuesto ui",
@@ -163,6 +252,7 @@ MAPEO_REM_PRESETS: Dict[str, Dict[str, Sequence[str]]] = {
             "impuesto 2da categoria",
             "retencion impuesto unico",
         ),
+        "monto_aporte_empleador": _ALIAS_APORTE_EMPLEADOR,
         "mes_aplicacion": (
             "mes",
             "periodo",
@@ -179,12 +269,13 @@ MAPEO_REM_PRESETS: Dict[str, Dict[str, Sequence[str]]] = {
         "rut_empleado": _ALIAS_RUT,
         "monto_liquido": _ALIAS_LIQUIDO,
         "monto_bruto": _ALIAS_BRUTO,
-        "monto_imponible": ("imponible", "base imponible"),
-        "monto_afp": ("afp", "cotizacion obligatoria", "prevision", "cot afp"),
-        "monto_salud_adicional": ("adicional salud", "adicional de salud", "cot adicional salud"),
-        "monto_cesantia": ("seguro cesantia", "seguro cesantía", "cesantia"),
-        "monto_salud": ("salud", "fonasa", "isapre", "cot salud", "cotizacion salud"),
-        "monto_impuesto_unico": ("impuesto unico", "impuesto único", "impuesto ui", "imp. unico", "iu"),
+        "monto_imponible": ("imponible", "base imponible", "total imponibles"),
+        "monto_afp": ("afp", "cotizacion obligatoria", "prevision", "cot afp", "cotiza afp"),
+        "monto_salud_adicional": ("adicional salud", "adicional de salud", "cot adicional salud", "adic isapre"),
+        "monto_cesantia": ("seguro cesantia", "seguro cesantía", "cesantia", "seg desempleo"),
+        "monto_salud": ("salud", "fonasa", "isapre", "cot salud", "cotizacion salud", "cotiza salud"),
+        "monto_impuesto_unico": ("impuesto unico", "impuesto único", "impuesto ui", "imp. unico", "imp a la renta", "iu"),
+        "monto_aporte_empleador": _ALIAS_APORTE_EMPLEADOR,
         "mes_aplicacion": ("mes", "periodo", "mes año", "fecha periodo"),
         "dia_pago": ("dia pago", "día pago"),
     },
@@ -230,14 +321,27 @@ def _mejor_columna_para_logico(
             continue
         if logical == "monto_salud" and "adicional" in nc:
             continue
+        # Evitar que «empleado» capture «empleador» / «s.c. empleador».
+        if logical == "empleado" and "empleador" in nc:
+            continue
+        if logical == "empleado" and re.search(r"\bs\.?\s*c\.?\b", nc):
+            continue
         clave_nc: Optional[Tuple[int, int]] = None
         for v in variants:
             nv = _norm_text(v)
             if not nv:
                 continue
+            # Evitar match parcial empleado ⊂ empleador.
+            if logical == "empleado" and nv == "empleado" and "empleador" in nc:
+                continue
             if nc == nv or nv in nc:
                 # rank 0 exacto; 1 substring nv in nc (encabezado más largo)
                 r = 0 if nc == nv else 1
+                # Preferir encabezados más específicos para trabajador/líquido.
+                if logical == "empleado" and "nombre" in nc:
+                    r = -1 if nc == nv or nv in nc else r
+                if logical == "monto_liquido" and "alcance" in nc:
+                    r = -1
                 tup = (r, len(nc))
             elif nc in nv:
                 if logical == "monto_salud_adicional" and len(nc) < len(nv):
@@ -255,6 +359,150 @@ def _mejor_columna_para_logico(
     return mejor_nc
 
 
+def _alias_encaja_columna(nc: str, nv: str) -> bool:
+    """Match de alias vs encabezado; evita falsos positivos de substrings cortos."""
+    if not nv:
+        return False
+    if nc == nv:
+        return True
+    # «s.i.s.» / SIS: solo token propio, nunca «sis» dentro de «inasist».
+    if nv.replace(".", "") == "sis":
+        return bool(re.search(r"(^|[^a-z0-9])s\.?i\.?s\.?([^a-z0-9]|$)", nc))
+    if len(nv) <= 3:
+        return bool(re.search(rf"(^|[^a-z0-9]){re.escape(nv)}([^a-z0-9]|$)", nc))
+    if nv in nc:
+        return True
+    # nc ⊂ nv solo si el encabezado es razonablemente específico.
+    if len(nc) >= 8 and nc in nv:
+        return True
+    return False
+
+
+def _columnas_para_aporte_empleador(ncols: Sequence[str], used_cols: set[str]) -> List[str]:
+    """Devuelve todas las columnas de aportes del empleador (multi-columna)."""
+    out: List[str] = []
+    for nc in ncols:
+        if not nc or nc in used_cols:
+            continue
+        # No tomar cotizaciones del trabajador ni descuentos/haberes ajenos.
+        if any(
+            x in nc
+            for x in (
+                "cotiza. a.f.p",
+                "cotiza afp",
+                "cotiza. salud",
+                "cotiza salud",
+                "adic. isapre",
+                "seg. desempleo",
+                "seguro desempleo",
+            )
+        ):
+            continue
+        if any(x in nc for x in _EXCLUIR_APORTE_EMPLEADOR):
+            continue
+        if "imp" in nc and "renta" in nc:
+            continue
+        # «Trabajo pesado» del trabajador ≠ «Aporte Trab. Pesado» del empleador.
+        if "trabajo pesado" in nc and "aporte" not in nc:
+            continue
+        matched = False
+        for v in _ALIAS_APORTE_EMPLEADOR:
+            if _alias_encaja_columna(nc, _norm_text(v)):
+                matched = True
+                break
+        # Heurística DAG: columnas con «empleador», «mutual», SIS, «aporte empl».
+        if not matched:
+            if "empleador" in nc or "mutual" in nc or "aporte empl" in nc:
+                matched = True
+            if re.search(r"(^|[^a-z0-9])s\.?i\.?s\.?([^a-z0-9]|$)", nc):
+                matched = True
+            if "aporte sustit" in nc or "comp. exp" in nc or "comp exp" in nc:
+                matched = True
+            if "rentabilidad protegida" in nc or "sue. empre" in nc or "sue empre" in nc:
+                matched = True
+        if matched:
+            out.append(nc)
+    return out
+
+
+_MESES_ES = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "setiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
+
+
+def detectar_periodo_libro_remuneraciones(fuente_bytes: bytes, *, hoja: Union[int, str, None] = 0) -> Optional[date]:
+    """
+    Busca en las primeras filas del Excel un texto tipo «Julio de 2026».
+    Retorna el primer día del mes detectado, o None.
+    """
+    try:
+        df_raw = pd.read_excel(
+            io.BytesIO(fuente_bytes),
+            sheet_name=hoja if hoja is not None else 0,
+            header=None,
+            nrows=8,
+            engine="openpyxl",
+        )
+    except Exception:
+        return None
+    patron = re.compile(
+        r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)"
+        r"\s*(?:de\s*)?(20\d{2}|\d{2})\b",
+        re.IGNORECASE,
+    )
+    for _, row in df_raw.iterrows():
+        for val in row.tolist():
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                continue
+            txt = str(val).strip()
+            if not txt or txt.lower().startswith("unnamed"):
+                continue
+            m = patron.search(_norm_text(txt))
+            if not m:
+                # También probar sin normalizar acentos removidos sobre el texto original lower.
+                m = patron.search(txt.lower())
+            if not m:
+                continue
+            mes_nom = _norm_text(m.group(1))
+            anio_raw = m.group(2)
+            mes = _MESES_ES.get(mes_nom)
+            if not mes:
+                continue
+            anio = int(anio_raw)
+            if anio < 100:
+                anio += 2000
+            return date(anio, mes, 1)
+    return None
+
+
+def _es_fila_total_o_invalida(empleado: str, rut: Optional[str]) -> bool:
+    """Excluye TOTAL/SUBTOTAL y filas sin trabajador/RUT usable."""
+    emp_n = _norm_text(empleado or "")
+    if not emp_n:
+        return True
+    if any(tok in emp_n for tok in ("total", "subtotal", "totales", "suma", "resumen")):
+        return True
+    rut_s = (rut or "").strip()
+    if not rut_s:
+        return True
+    # RUT chileno mínimo: dígitos + guión opcional + DV.
+    if not re.search(r"\d{6,}-?[\dkK]", rut_s):
+        return True
+    return False
+
+
 def detectar_mapeo_remuneraciones(
     columnas: Sequence[str],
     preset: Optional[str] = None,
@@ -268,6 +516,13 @@ def detectar_mapeo_remuneraciones(
     for logical, variants in aliases.items():
         if logical in mapping:
             continue
+        if logical == "monto_aporte_empleador":
+            cols_ap = _columnas_para_aporte_empleador(ncols, used_cols)
+            if cols_ap:
+                mapping["monto_aporte_empleador"] = cols_ap[0]
+                mapping["__aporte_empleador_cols__"] = "||".join(cols_ap)
+                used_cols.update(cols_ap)
+            continue
         nc = _mejor_columna_para_logico(ncols, variants, logical, used_cols)
         if nc:
             mapping[logical] = nc
@@ -277,6 +532,8 @@ def detectar_mapeo_remuneraciones(
         for nc in ncols:
             if nc in used_cols:
                 continue
+            if "empleador" in nc:
+                continue
             if "nombre" in nc and "empresa" not in nc:
                 mapping["empleado"] = nc
                 used_cols.add(nc)
@@ -285,6 +542,8 @@ def detectar_mapeo_remuneraciones(
     if "empleado" not in mapping:
         for nc in ncols:
             if nc in used_cols:
+                continue
+            if "empleador" in nc:
                 continue
             if any(
                 h in nc
@@ -357,6 +616,17 @@ def _score_mapeo_remuneraciones(mapeo: Mapping[str, str]) -> int:
         s += 15
     if "monto_impuesto_unico" in mapeo:
         s += 10
+    if "monto_aporte_empleador" in mapeo or "__aporte_empleador_cols__" in mapeo:
+        s += 25
+    # Preferir encabezados DAG reales.
+    emp_col = (mapeo.get("empleado") or "")
+    if "nombre trabajador" in emp_col or emp_col == "nombre trabajador":
+        s += 50
+    if "empleador" in emp_col:
+        s -= 80
+    liq_col = (mapeo.get("monto_liquido") or "")
+    if "alcance" in liq_col:
+        s += 40
     return s
 
 
@@ -490,6 +760,11 @@ def dataframe_a_registros_remuneracion(
     col_iu = mapeo.get("monto_impuesto_unico")
     col_mes = mapeo.get("mes_aplicacion")
     col_dia = mapeo.get("dia_pago")
+    cols_aporte_emp = [
+        c for c in str(mapeo.get("__aporte_empleador_cols__") or "").split("||") if c
+    ]
+    if not cols_aporte_emp and mapeo.get("monto_aporte_empleador"):
+        cols_aporte_emp = [mapeo["monto_aporte_empleador"]]
 
     out: List[Dict[str, Any]] = []
 
@@ -499,6 +774,16 @@ def dataframe_a_registros_remuneracion(
             advertencias.append(f"Fila {idx}: sin nombre de empleado, omitida.")
             continue
         empleado = str(emp).strip()[:200]
+        rut_val: Optional[str] = None
+        if col_rut:
+            r = row.get(col_rut)
+            if r is not None and not (isinstance(r, float) and pd.isna(r)):
+                rut_val = str(r).strip()[:20]
+        if _es_fila_total_o_invalida(empleado, rut_val):
+            advertencias.append(
+                f"Fila {idx}: excluida (TOTAL/SUBTOTAL o sin trabajador/RUT válido)."
+            )
+            continue
 
         limpio = _to_decimal(row.get(col_liq)) if col_liq else None
         bruto = _to_decimal(row.get(col_bruto)) if col_bruto else None
@@ -523,10 +808,8 @@ def dataframe_a_registros_remuneracion(
             "mes_aplicacion": mes_app,
             "monto_liquido": limpio,
         }
-        if col_rut:
-            r = row.get(col_rut)
-            if r is not None and not (isinstance(r, float) and pd.isna(r)):
-                reg["rut_empleado"] = str(r).strip()[:20]
+        if rut_val:
+            reg["rut_empleado"] = rut_val
         if bruto is not None and col_bruto:
             reg["monto_bruto"] = bruto
         if col_imp:
@@ -553,6 +836,16 @@ def dataframe_a_registros_remuneracion(
             iu = _to_decimal(row.get(col_iu))
             if iu is not None:
                 reg["monto_impuesto_unico"] = iu
+        aporte_emp = Decimal(0)
+        tiene_aporte = False
+        for c_ap in cols_aporte_emp:
+            val_ap = _to_decimal(row.get(c_ap))
+            if val_ap is None:
+                continue
+            aporte_emp += val_ap
+            tiene_aporte = True
+        if tiene_aporte:
+            reg["monto_aporte_empleador"] = aporte_emp
         dia: Optional[int] = None
         if col_dia:
             dval = row.get(col_dia)
@@ -579,6 +872,8 @@ class ResultadoCargaRemuneraciones:
     filas_validas: int
     mapeo_columnas: Dict[str, str] = field(default_factory=dict)
     advertencias: List[str] = field(default_factory=list)
+    mes_aplicacion_usado: Optional[date] = None
+    periodo_detectado_encabezado: Optional[date] = None
 
 
 def inspeccionar_excel_remuneraciones(
@@ -591,18 +886,25 @@ def inspeccionar_excel_remuneraciones(
     max_fila_header: int = 15,
 ) -> Dict[str, Any]:
     fh_usada = fila_header
+    raw = _remuneraciones_fuente_a_bytes(fuente)
+    periodo_hdr = detectar_periodo_libro_remuneraciones(raw, hoja=hoja)
     if auto_fila_header:
-        raw = _remuneraciones_fuente_a_bytes(fuente)
         fh_usada, df, mapeo = encontrar_mejor_encabezado_remuneraciones(
-            raw, preset=preset, hoja=hoja, max_fila=max_fila_header
+            raw, preset=preset or "dag", hoja=hoja, max_fila=max_fila_header
         )
         cols = list(df.columns)
+        preset_final = _elegir_preset_remuneraciones(cols, preset)
+        if preset_final != (preset or "dag").lower():
+            fh_usada, df, mapeo = encontrar_mejor_encabezado_remuneraciones(
+                raw, preset=preset_final, hoja=hoja, max_fila=max_fila_header
+            )
+            cols = list(df.columns)
     else:
         df_raw = leer_excel_facturas(fuente, hoja=hoja, fila_header=fila_header)
         df = preparar_df_remuneraciones_columnas(df_raw)
         cols = list(df.columns)
-        mapeo = detectar_mapeo_remuneraciones(cols, preset=preset)
-    necesita_mes = "mes_aplicacion" not in mapeo
+        mapeo = detectar_mapeo_remuneraciones(cols, preset=_elegir_preset_remuneraciones(cols, preset))
+    necesita_mes = "mes_aplicacion" not in mapeo and periodo_hdr is None
     faltantes: List[str] = []
     if "empleado" not in mapeo:
         faltantes.append("empleado")
@@ -612,12 +914,27 @@ def inspeccionar_excel_remuneraciones(
         faltantes.append("mes_aplicacion (o usar mes_aplicacion_default al cargar)")
     return {
         "columnas": cols,
-        "mapeo": mapeo,
+        "mapeo": {k: v for k, v in mapeo.items() if not k.startswith("__")},
         "requiere_mes_default": necesita_mes,
+        "periodo_detectado": periodo_hdr,
         "mapeo_ok": "empleado" in mapeo and ("monto_liquido" in mapeo or "monto_bruto" in mapeo),
         "faltantes": faltantes,
         "muestra_filas": min(5, len(df)),
+        "fila_header": fh_usada,
     }
+
+
+def _elegir_preset_remuneraciones(columnas: Sequence[str], preset: Optional[str]) -> str:
+    if preset:
+        return preset.lower()
+    ncols = [_norm_text(c) for c in columnas]
+    if any("alcance liquido" in c or c == "alcance liquido" for c in ncols):
+        return "dag"
+    if any("nombre trabajador" in c for c in ncols):
+        return "dag"
+    if any("cotiza. a.f.p" in c or "cotiza afp" in c for c in ncols):
+        return "dag"
+    return "planilla_cl"
 
 
 def cargar_excel_remuneraciones(
@@ -635,29 +952,54 @@ def cargar_excel_remuneraciones(
     max_fila_header: int = 15,
     origen: str = "upload_excel",
 ) -> ResultadoCargaRemuneraciones:
+    raw = _remuneraciones_fuente_a_bytes(fuente)
+    periodo_hdr = detectar_periodo_libro_remuneraciones(raw, hoja=hoja)
+
     if auto_fila_header:
-        raw = _remuneraciones_fuente_a_bytes(fuente)
-        _fh, df, mapeo = encontrar_mejor_encabezado_remuneraciones(
+        _fh, df, mapeo_probe = encontrar_mejor_encabezado_remuneraciones(
             raw,
-            preset=preset_columnas,
+            preset=preset_columnas or "dag",
             hoja=hoja,
             max_fila=max_fila_header,
         )
+        preset_final = _elegir_preset_remuneraciones(list(df.columns), preset_columnas)
+        if preset_final != (preset_columnas or "dag").lower():
+            _fh, df, mapeo = encontrar_mejor_encabezado_remuneraciones(
+                raw,
+                preset=preset_final,
+                hoja=hoja,
+                max_fila=max_fila_header,
+            )
+        else:
+            mapeo = mapeo_probe
     else:
         df_raw = leer_excel_facturas(fuente, hoja=hoja, fila_header=fila_header)
         df = preparar_df_remuneraciones_columnas(df_raw)
-        mapeo = detectar_mapeo_remuneraciones(list(df.columns), preset=preset_columnas)
+        preset_final = _elegir_preset_remuneraciones(list(df.columns), preset_columnas)
+        mapeo = detectar_mapeo_remuneraciones(list(df.columns), preset=preset_final)
 
-    if mes_aplicacion_default is not None and primer_dia_mes:
-        mes_aplicacion_default = date(mes_aplicacion_default.year, mes_aplicacion_default.month, 1)
+    # Período: encabezado del libro tiene prioridad; fallback manual solo si no se detecta.
+    mes_usado = periodo_hdr
+    if mes_usado is None and mes_aplicacion_default is not None:
+        mes_usado = mes_aplicacion_default
+    if mes_usado is not None and primer_dia_mes:
+        mes_usado = date(mes_usado.year, mes_usado.month, 1)
 
     registros, adv = dataframe_a_registros_remuneracion(
         df,
         mapeo,
-        mes_aplicacion_default=mes_aplicacion_default,
+        mes_aplicacion_default=mes_usado,
         primer_dia_mes=primer_dia_mes,
         dia_pago_default=dia_pago_default,
     )
+    if periodo_hdr is not None:
+        adv = [
+            f"Período detectado desde encabezado del libro: {periodo_hdr.strftime('%Y-%m')}."
+        ] + list(adv)
+    elif mes_aplicacion_default is not None:
+        adv = [
+            "No se detectó período en el encabezado; se usó el mes manual de fallback."
+        ] + list(adv)
 
     carga = crud_p.crear_proyeccion_carga(
         user_id,
@@ -681,6 +1023,8 @@ def cargar_excel_remuneraciones(
         filas_guardadas=n,
         filas_leidas=len(df),
         filas_validas=len(registros),
-        mapeo_columnas=dict(mapeo),
+        mapeo_columnas={k: v for k, v in mapeo.items() if not k.startswith("__")},
         advertencias=adv,
+        mes_aplicacion_usado=mes_usado,
+        periodo_detectado_encabezado=periodo_hdr,
     )

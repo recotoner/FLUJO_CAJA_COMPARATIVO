@@ -50,6 +50,7 @@ def _ensure_proyeccion_remuneraciones_columns() -> None:
         "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_impuesto_unico DECIMAL(15, 0)",
         "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_salud_adicional DECIMAL(15, 0)",
         "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_cesantia DECIMAL(15, 0)",
+        "ALTER TABLE proyeccion_remuneraciones ADD COLUMN monto_aporte_empleador DECIMAL(15, 0)",
     ]
     with engine.begin() as conn:
         for q in ddl:
@@ -99,6 +100,12 @@ SEED_CATEGORIAS_FINANCIERAS: List[Dict[str, Any]] = [
     {"codigo": "IVA_IMPORTACION", "nombre": "IVA Importación", "tipo": "egreso", "orden_display": 80},
     {"codigo": "PPM", "nombre": "PPM", "tipo": "egreso", "orden_display": 90},
     {"codigo": "RETENCION", "nombre": "Retenciones", "tipo": "egreso", "orden_display": 100},
+    {
+        "codigo": "F29_91",
+        "nombre": "F29 total a pagar — código 91",
+        "tipo": "egreso",
+        "orden_display": 105,
+    },
     {"codigo": "GASTOS_IMPORTACION", "nombre": "Gastos de Importación", "tipo": "egreso", "orden_display": 110},
     {"codigo": "IMPUESTOS", "nombre": "Impuestos SII", "tipo": "egreso", "orden_display": 120},
     {"codigo": "MULTAS_TGR", "nombre": "Multas / TGR", "tipo": "egreso", "orden_display": 130},
@@ -524,6 +531,7 @@ def crear_proyeccion_remuneracion(
     monto_salud_adicional: Number = None,
     monto_cesantia: Number = None,
     monto_impuesto_unico: Number = None,
+    monto_aporte_empleador: Number = None,
     dia_pago: Optional[int] = None,
 ) -> ProyeccionRemuneracion:
     _ensure_proyeccion_remuneraciones_columns()
@@ -543,6 +551,7 @@ def crear_proyeccion_remuneracion(
             monto_salud_adicional=_dec(monto_salud_adicional),
             monto_cesantia=_dec(monto_cesantia),
             monto_impuesto_unico=_dec(monto_impuesto_unico),
+            monto_aporte_empleador=_dec(monto_aporte_empleador),
             dia_pago=dia_pago,
         )
         db.add(r)
@@ -574,6 +583,7 @@ def crear_proyeccion_remuneraciones_bulk(registros: Sequence[Dict[str, Any]]) ->
                 "monto_salud_adicional",
                 "monto_cesantia",
                 "monto_impuesto_unico",
+                "monto_aporte_empleador",
             ):
                 if key in copy:
                     copy[key] = _dec(copy[key])
@@ -978,6 +988,39 @@ def listar_proyeccion_egresos_parametricos(user_id: int) -> List[ProyeccionEgres
         return db.query(ProyeccionEgresoParametrico).filter(ProyeccionEgresoParametrico.user_id == user_id).all()
     finally:
         db.close()
+
+
+def listar_proyeccion_egresos_por_codigo(user_id: int, codigo: str) -> List[ProyeccionEgresoParametrico]:
+    """Egresos paramétricos del usuario filtrados por código de categoría (p. ej. F29_91)."""
+    cat = obtener_categoria_por_codigo(codigo)
+    if not cat:
+        return []
+    db = next(get_db())
+    try:
+        return (
+            db.query(ProyeccionEgresoParametrico)
+            .filter(
+                ProyeccionEgresoParametrico.user_id == user_id,
+                ProyeccionEgresoParametrico.categoria_id == cat.id,
+            )
+            .order_by(ProyeccionEgresoParametrico.mes_aplicacion.desc(), ProyeccionEgresoParametrico.id.desc())
+            .all()
+        )
+    finally:
+        db.close()
+
+
+def existe_egreso_f29_periodo(user_id: int, mes_periodo: date) -> bool:
+    """True si ya hay un F29_91 para el mismo usuario y mes tributario (año-mes)."""
+    cat = obtener_categoria_por_codigo("F29_91")
+    if not cat or mes_periodo is None:
+        return False
+    y, m = mes_periodo.year, mes_periodo.month
+    for e in listar_proyeccion_egresos_por_codigo(user_id, "F29_91"):
+        ma = e.mes_aplicacion
+        if ma is not None and ma.year == y and ma.month == m:
+            return True
+    return False
 
 
 def obtener_proyeccion_egreso_parametrico(egreso_id: int) -> Optional[ProyeccionEgresoParametrico]:

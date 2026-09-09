@@ -2402,6 +2402,214 @@ def render_proyeccion(usuario: Optional[Usuario]) -> None:
     s1.metric("Saldo inicial caja (Tab 1)", f"${saldo_cartola_real:,.0f}")
     s2.metric("Saldo final proyectado (inicial + flujo neto)", f"${(saldo_cartola_real + float(saldo_neto_periodo)):,.0f}")
 
+    # ---- Exportación Excel / PDF (solo lectura del snapshot visible; no regenera) ----
+    from modulo_exportacion_proyeccion import (
+        ContextoExportacionProyeccion,
+        FacturaExportacion,
+        LineaExportacion,
+        ParametrosExportacion,
+        concepto_desde_codigo,
+        exportar_excel_y_pdf,
+    )
+
+    _origen_alias_exp = {
+        "upload_excel": "Carga Excel",
+        "parametrico": "Cálculo automático",
+    }
+    _id_nom_exp: Dict[int, str] = {}
+    _id_cod_exp: Dict[int, str] = {}
+    for _cid in {int(l.categoria_id) for l in lineas_filtradas}:
+        _c = crud_p.obtener_categoria_por_id(_cid)
+        if _c:
+            _id_nom_exp[_cid] = _c.nombre or ""
+            _id_cod_exp[_cid] = (_c.codigo or "").strip().upper()
+
+    _lineas_exp: List[Any] = []
+    _periodo_rem_fuente: Optional[str] = None
+    for _l in lineas_filtradas:
+        _cod = _id_cod_exp.get(int(_l.categoria_id), "")
+        _nom = _id_nom_exp.get(int(_l.categoria_id), str(_l.categoria_id))
+        _concepto = concepto_desde_codigo(_cod, _nom)
+        _desc = (_l.descripcion or "").strip()
+        if "base est." in _desc.lower():
+            import re as _re_exp
+
+            _m_rem = _re_exp.search(r"base est\.\s*(\d{4}-\d{2})", _desc, flags=_re_exp.IGNORECASE)
+            if _m_rem:
+                _periodo_rem_fuente = _m_rem.group(1)
+        _lineas_exp.append(
+            LineaExportacion(
+                fecha=_l.fecha_impacto,
+                concepto=_concepto,
+                categoria=_nom,
+                descripcion=_desc,
+                monto=_dec(_l.monto),
+                confianza=(_l.tipo_confianza or "").strip() or "—",
+                origen=_origen_alias_exp.get(
+                    (_l.origen or "").strip().lower(), (_l.origen or "—")
+                ),
+            )
+        )
+
+    _params_u = crud_p.obtener_proyeccion_parametros_usuario(user_id)
+    _params_exp = ParametrosExportacion(
+        tasa_ppm=_dec(_params_u.tasa_ppm) if _params_u and _params_u.tasa_ppm is not None else None,
+        tasa_retencion_honorarios=(
+            _dec(_params_u.tasa_retencion_honorarios)
+            if _params_u and _params_u.tasa_retencion_honorarios is not None
+            else None
+        ),
+        dia_pago_impuestos=int(_params_u.dia_pago_impuestos) if _params_u and _params_u.dia_pago_impuestos is not None else None,
+        dia_pago_remuneraciones=(
+            int(_params_u.dia_pago_remuneraciones)
+            if _params_u and _params_u.dia_pago_remuneraciones is not None
+            else None
+        ),
+        dia_pago_imposiciones=(
+            int(_params_u.dia_pago_imposiciones)
+            if _params_u and _params_u.dia_pago_imposiciones is not None
+            else None
+        ),
+        venta_global_esperada_mes=(
+            _dec(_params_u.venta_global_esperada_mes)
+            if _params_u and _params_u.venta_global_esperada_mes is not None
+            else None
+        ),
+        porcentaje_ventas_contado=(
+            _dec(_params_u.porcentaje_ventas_contado)
+            if _params_u and _params_u.porcentaje_ventas_contado is not None
+            else None
+        ),
+        compra_global_esperada_mes=(
+            _dec(_params_u.compra_global_esperada_mes)
+            if _params_u and _params_u.compra_global_esperada_mes is not None
+            else None
+        ),
+        porcentaje_compras_contado=(
+            _dec(_params_u.porcentaje_compras_contado)
+            if _params_u and _params_u.porcentaje_compras_contado is not None
+            else None
+        ),
+        porcentaje_morosidad_cxc=(
+            _dec(_params_u.porcentaje_morosidad_cxc)
+            if _params_u and _params_u.porcentaje_morosidad_cxc is not None
+            else None
+        ),
+        porcentaje_recuperabilidad_morosos=(
+            _dec(_params_u.porcentaje_recuperabilidad_morosos)
+            if _params_u and _params_u.porcentaje_recuperabilidad_morosos is not None
+            else None
+        ),
+        periodo_fuente_remuneraciones=_periodo_rem_fuente,
+    )
+
+    _facts_exp: List[Any] = []
+    for _f in _facturas_ultimas_cargas(user_id):
+        _facts_exp.append(
+            FacturaExportacion(
+                tipo=(_f.tipo or "").strip().lower(),
+                fecha_vencimiento=_f.fecha_vencimiento,
+                razon_social=(_f.razon_social or "")[:200],
+                folio=(_f.folio or "")[:50],
+                monto=_monto_factura(_f),
+                saldo=_dec(_f.saldo) if _f.saldo is not None else _monto_factura(_f),
+                estado=(_f.estado or "")[:50],
+                tipo_confianza=(_f.tipo_confianza or "real"),
+            )
+        )
+
+    _advs_exp: List[str] = []
+    if aplica_mora or aplica_contado or aplica_recup_morosos or aplica_compra_contado:
+        _msgs = []
+        if aplica_mora:
+            _msgs.append("morosidad en Facturas por Cobrar")
+        if aplica_contado:
+            _msgs.append("ventas contado esperadas")
+        if aplica_recup_morosos:
+            _msgs.append("recuperación de CxC morosos")
+        if aplica_compra_contado:
+            _msgs.append("compras contado esperadas")
+        _advs_exp.append("Supuestos del cliente activos: " + ", ".join(_msgs) + ".")
+    if pct_riesgo > UMBRAL_CONFIANZA_BAJA:
+        _advs_exp.append(
+            f"Más del {UMBRAL_CONFIANZA_BAJA:.0%} del flujo es estimado o manual ({pct_riesgo:.1%})."
+        )
+    if incluir_arrastre_cxp_ui and cxp_vencido_no_pagado > 0:
+        _advs_exp.append(
+            f"Arrastre inicial CXP vencidos incluido: ${cxp_vencido_no_pagado:,.0f}."
+        )
+    if _periodo_rem_fuente:
+        _advs_exp.append(
+            f"Remuneraciones/imposiciones: período fuente {_periodo_rem_fuente} "
+            f"de la última carga se usa como base estimada para cada mes del horizonte."
+        )
+
+    _empresa_exp = (getattr(usuario, "nombre_empresa", None) or "Empresa").strip() or "Empresa"
+    # Rango exportado = filtros visibles de la UI (solo futuro), no el inicio histórico del snapshot.
+    _rango_export_inicio = max(fecha_desde_sel, fecha_analisis)
+    _rango_export_fin = fecha_hasta_sel
+    if _rango_export_inicio > _rango_export_fin:
+        _rango_export_inicio = _rango_export_fin
+    _ctx_export = ContextoExportacionProyeccion(
+        user_id=int(user_id),
+        snapshot_user_id=int(getattr(snap, "user_id", user_id)),
+        empresa=_empresa_exp,
+        fecha_emision=date.today(),
+        snapshot_id=int(snap.id),
+        version=int(snap.version),
+        etiqueta=(snap.etiqueta or "")[:100],
+        notas=(snap.notas or "")[:2000],
+        periodo_inicio=_rango_export_inicio,
+        periodo_fin=_rango_export_fin,
+        saldo_inicial=_dec(saldo_cartola_real),
+        cobros_cxc=_dec(total_cxc_proy),
+        egresos=_dec(total_egr_kpi),
+        flujo_neto=_dec(saldo_neto_periodo),
+        saldo_final=_dec(saldo_cartola_real) + _dec(saldo_neto_periodo),
+        pct_estimado_manual=float(pct_riesgo),
+        advertencias=_advs_exp,
+        lineas=_lineas_exp,
+        facturas=_facts_exp,
+        parametros=_params_exp,
+    )
+
+    st.markdown('<div class="proy-section-title">Exportar proyección</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="proy-section-sub">Descarga el escenario visible (mismo usuario y snapshot). No recalcula ni guarda una nueva proyección.</div>',
+        unsafe_allow_html=True,
+    )
+    _can_export = bool(snap and snap.id and int(getattr(snap, "user_id", user_id)) == int(user_id))
+    _bx1, _bx2 = st.columns(2)
+    if _can_export:
+        try:
+            _xlsx_bytes, _pdf_bytes, _n_xlsx, _n_pdf = exportar_excel_y_pdf(_ctx_export)
+        except Exception as _ex_exp:
+            _xlsx_bytes = _pdf_bytes = None
+            st.error(f"No se pudo generar la exportación: {_ex_exp}")
+        else:
+            with _bx1:
+                st.download_button(
+                    "📊 Descargar Excel",
+                    data=_xlsx_bytes,
+                    file_name=_n_xlsx,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_xlsx_proy_{sid}_{user_id}",
+                    type="primary",
+                    use_container_width=True,
+                )
+            with _bx2:
+                st.download_button(
+                    "📄 Descargar PDF",
+                    data=_pdf_bytes,
+                    file_name=_n_pdf,
+                    mime="application/pdf",
+                    key=f"dl_pdf_proy_{sid}_{user_id}",
+                    type="primary",
+                    use_container_width=True,
+                )
+    else:
+        st.info("Seleccione una proyección válida de su cuenta para habilitar la descarga.")
+
     if lineas_filtradas:
         fechas, montos, doms = _agregacion_diaria_waterfall(lineas_filtradas)
         if fechas:

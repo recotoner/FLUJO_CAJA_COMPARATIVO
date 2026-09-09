@@ -53,3 +53,7 @@ Thumbs.db
 temp/
 tmp/
 
+
+# Muestras locales de exportacion Excel/PDF
+exports_muestra/
+

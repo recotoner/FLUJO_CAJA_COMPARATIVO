@@ -7,6 +7,23 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 from pathlib import Path
 
+
+def normalize_database_url(url: str) -> str:
+    """
+    Fuerza el driver psycopg2 en URLs PostgreSQL sin driver explícito.
+
+    SQLAlchemy 2.1+ usa psycopg (v3) por defecto para postgresql://; este proyecto
+    declara psycopg2-binary. No altera sqlite ni URLs que ya traen +driver.
+    """
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg2://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg2://" + url[len("postgresql://") :]
+    return url
+
+
 # Crear directorio si no existe
 BASE_DIR = Path(__file__).parent.parent
 DB_DIR = BASE_DIR / "database"
@@ -18,10 +35,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
     # PostgreSQL en producción (Render, Heroku, etc.)
-    # DATABASE_URL viene en formato: postgresql://user:password@host:port/dbname
-    # Render puede usar postgres:// que necesitamos convertir a postgresql://
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = normalize_database_url(DATABASE_URL)
 
     # Configuración para PostgreSQL
     engine = create_engine(

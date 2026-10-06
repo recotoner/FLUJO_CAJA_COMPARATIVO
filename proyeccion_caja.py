@@ -258,8 +258,8 @@ def _fraccion_flujo_estimado_manual_lineas(lineas: List[ProyeccionLinea]) -> flo
 
 def _obtener_saldo_cartola_real(user_id: int, archivo_id: Optional[int] = None) -> Decimal:
     """
-    Saldo al cierre según cartola: fecha ascendente; mismo día id descendente (carga típica más reciente
-    arriba). Propagación si falta saldo en la última línea. Sin columna saldo, equivale al neto del extracto.
+    Saldo al cierre según estructura de la cartola (orientación asc/desc del extracto).
+    Sin columna saldo, equivale al neto del extracto.
     """
     try:
         trans = obtener_transacciones(user_id=user_id, archivo_id=archivo_id)
@@ -306,6 +306,7 @@ def _obtener_saldo_cartola_real(user_id: int, archivo_id: Optional[int] = None) 
             db.close()
         except Exception:
             return Decimal(0)
+
     def _dec_loose(x: Any) -> Decimal:
         if x is None:
             return Decimal(0)
@@ -329,32 +330,30 @@ def _obtener_saldo_cartola_real(user_id: int, archivo_id: Optional[int] = None) 
         except Exception:
             return Decimal(0)
 
-    trans_list = list(trans)
-    trans_list.sort(
-        key=lambda t: (
-            getattr(t, "fecha", None) or date.min,
-            -int(getattr(t, "id", None) or 0),
-        )
-    )
+    from cartola_saldo import saldo_cierre_desde_movimientos
 
-    running: Optional[Decimal] = None
-    saldo_calculado = Decimal(0)
-    for t in trans_list:
+    trans_list = list(trans)
+    # Orden de archivo ~ id de inserción ascendente al cargar la cartola.
+    trans_list.sort(key=lambda t: int(getattr(t, "id", None) or 0))
+    movs = []
+    neto = Decimal(0)
+    for idx, t in enumerate(trans_list):
         ab = _dec_loose(getattr(t, "abono", None))
         cg = _dec_loose(getattr(t, "cargo", None))
-        saldo_calculado += ab - cg
-        raw_saldo = getattr(t, "saldo", None)
-        if raw_saldo is not None:
-            running = _dec_loose(raw_saldo)
-        elif running is not None:
-            running = running + ab - cg
-        else:
-            running = ab - cg
-
-    if running is not None:
-        return running
-    return saldo_calculado
-
+        neto += ab - cg
+        movs.append(
+            {
+                "fecha": getattr(t, "fecha", None),
+                "saldo": getattr(t, "saldo", None),
+                "abono": ab,
+                "cargo": cg,
+                "ord": int(getattr(t, "id", None) or idx),
+            }
+        )
+    saldo_cierre, _ = saldo_cierre_desde_movimientos(movs)
+    if saldo_cierre is not None:
+        return saldo_cierre
+    return neto
 
 def _resolver_archivo_tab1_activo(user_id: int) -> Optional[int]:
     """

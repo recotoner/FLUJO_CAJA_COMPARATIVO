@@ -1803,49 +1803,20 @@ if config_clasificadores is not None and usuario_actual:
             saldo_inicial = st.sidebar.number_input("Saldo inicial del periodo", value=0, key="saldo_inicial_input")
             saldo_calculado = saldo_inicial + total_abonos - total_cargos
 
-            # Saldo cartola al cierre: recorrer todos los movimientos en orden cronológico real.
-            # Misma fecha: muchas cartolas listan del más nuevo al más viejo (arriba el último movimiento
-            # del día). Ordenar por FECHA asc. y _ord_orig desc. para procesar ese día de temprano→tarde.
-            # Luego, si falta saldo en la última línea, se propaga: saldo + abonos − cargos.
+            # Saldo cartola al cierre: según orientación real del extracto (estructura).
+            # Asc -> última fila del último día; desc -> primera fila del último día.
             saldo_cartola = None
             diferencia = None
             fecha_saldo_cartola = None
-            
+
             if "SALDO (CLP)" in df.columns and "FECHA" in df.columns:
-                dfc = df.copy()
-                if not pd.api.types.is_datetime64_any_dtype(dfc["FECHA"]):
-                    dfc["FECHA"] = pd.to_datetime(dfc["FECHA"], errors="coerce")
-                dfc = dfc[dfc["FECHA"].notna()]
-                if not dfc.empty:
-                    _saldos_col = pd.to_numeric(dfc["SALDO (CLP)"], errors="coerce")
-                    # Si ninguna fila trae saldo del banco (típico en BD), el recorrido solo suma
-                    # abonos−cargos y coincide con el flujo neto sin el saldo inicial del sidebar → error en web.
-                    hay_saldo_real_en_extracto = bool(_saldos_col.notna().any())
-                    dfc["_ord_orig"] = dfc.index
-                    dfc = dfc.sort_values(
-                        by=["FECHA", "_ord_orig"],
-                        ascending=[True, False],
-                        na_position="last",
-                    )
-                    running = None
-                    last_fecha = None
-                    for _, row in dfc.iterrows():
-                        ab = pd.to_numeric(row.get("ABONOS (CLP)"), errors="coerce")
-                        cg = pd.to_numeric(row.get("CARGOS (CLP)"), errors="coerce")
-                        ab = float(ab) if pd.notna(ab) else 0.0
-                        cg = float(cg) if pd.notna(cg) else 0.0
-                        s = pd.to_numeric(row.get("SALDO (CLP)"), errors="coerce")
-                        last_fecha = row["FECHA"]
-                        if pd.notna(s):
-                            running = float(s)
-                        elif running is not None:
-                            running = running + ab - cg
-                        else:
-                            running = ab - cg
-                    if running is not None and hay_saldo_real_en_extracto:
-                        saldo_cartola = float(running)
-                        fecha_saldo_cartola = last_fecha
-                        diferencia = saldo_calculado - saldo_cartola
+                from cartola_saldo import saldo_cierre_desde_dataframe
+
+                _saldo_cierre, _fecha_cierre, _ = saldo_cierre_desde_dataframe(df)
+                if _saldo_cierre is not None:
+                    saldo_cartola = float(_saldo_cierre)
+                    fecha_saldo_cartola = _fecha_cierre
+                    diferencia = saldo_calculado - saldo_cartola
 
             col4, col5 = st.columns(2)
             col4.metric("📌 Saldo Final Calculado", f"${saldo_calculado:,.0f}")
